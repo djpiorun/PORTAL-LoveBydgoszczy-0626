@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /panel/
+Disallow: /logowanie
+Disallow: /auth
+
+Sitemap: https://lovebydgoszcz.pl/sitemap.xml

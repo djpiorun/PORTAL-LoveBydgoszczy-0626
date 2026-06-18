@@ -1,0 +1,103 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarChart3, Megaphone, Image as ImageIcon, DollarSign, Calendar } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+
+export function AdsDashboard() {
+  const stats = useQuery(api.ads.getDashboardStats);
+
+  if (!stats) {
+    return <div className="flex justify-center p-8"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Aktywne kampanie</CardTitle>
+            <Megaphone className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activeCampaigns}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Wyświetlenia reklam</CardTitle>
+            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalViews.toLocaleString()}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Średni CTR</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.avgCtr}%</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Przychód (szacowany)</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.estimatedRevenue.toLocaleString()} zł</div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="col-span-4">
+          <CardHeader>
+            <CardTitle>Najlepsze kampanie</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.topCampaigns.length > 0 ? stats.topCampaigns.map((c) => (
+                <div key={c._id} className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0">
+                  <div>
+                    <p className="font-medium">{c.name}</p>
+                    <p className="text-sm text-muted-foreground">Partner: {c.partnerName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium">{c.ctr}% CTR</p>
+                    <p className="text-sm text-muted-foreground">{c.views.toLocaleString()} wyświetleń</p>
+                  </div>
+                </div>
+              )) : (
+                <p className="text-sm text-muted-foreground">Brak danych o kampaniach.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="col-span-3">
+          <CardHeader>
+            <CardTitle>Kończące się wkrótce</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.endingSoon.length > 0 ? stats.endingSoon.map((c) => (
+                <div key={c._id} className="flex items-center gap-4 border-b pb-4 last:border-0 last:pb-0">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{c.name}</p>
+                    <p className="text-sm text-amber-600">Kończy się za {c.daysLeft} dni</p>
+                  </div>
+                </div>
+              )) : (
+                <p className="text-sm text-muted-foreground">Brak kampanii kończących się wkrótce.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

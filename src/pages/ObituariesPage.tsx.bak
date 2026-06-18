@@ -1,0 +1,173 @@
+import { useState } from "react";
+import { usePaginatedQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Link } from "react-router";
+import { Search, Plus, LayoutGrid, List as ListIcon, BookOpen, Feather } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ObituaryForm from "@/components/obituaries/ObituaryForm";
+import SEO from "@/components/SEO";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+
+const CrossIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 36" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 0V10H4V14H10V36H14V14H20V10H14V0H10Z" />
+  </svg>
+);
+
+const RealisticCandle = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 60 140" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+    {/* Glow */}
+    <circle cx="30" cy="35" r="30" fill="url(#glow-realistic)" className="animate-pulse opacity-50" />
+    
+    {/* Flame Outer */}
+    <path d="M30 10 C30 10 40 30 40 45 C40 55 30 55 30 55 C30 55 20 55 20 45 C20 30 30 10 30 10Z" fill="url(#flame-outer)" className="animate-flicker" />
+    
+    {/* Flame Inner */}
+    <path d="M30 25 C30 25 35 38 35 48 C35 52 30 52 30 52 C30 52 25 52 25 48 C25 38 30 25 30 25Z" fill="url(#flame-inner)" className="animate-flicker" style={{ animationDelay: '0.1s' }} />
+    
+    {/* Wick */}
+    <path d="M30 50 V58" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" />
+    
+    {/* Candle Body */}
+    <path d="M20 56 C20 56 30 52 40 56 V135 C40 138 30 140 20 135 V56Z" fill="url(#candle-body)" />
+    
+    {/* Melted wax top */}
+    <ellipse cx="30" cy="56" rx="10" ry="3" fill="#fdfbf7" />
+    <path d="M22 56 Q25 65 28 57" stroke="#fdfbf7" strokeWidth="1.5" fill="none" />
+    
+    <defs>
+      <radialGradient id="glow-realistic" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0%" stopColor="#ffaa00" stopOpacity="0.8" />
+        <stop offset="50%" stopColor="#ff5500" stopOpacity="0.3" />
+        <stop offset="100%" stopColor="#ff0000" stopOpacity="0" />
+      </radialGradient>
+      <linearGradient id="flame-outer" x1="30" y1="10" x2="30" y2="55" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#ffcc00" stopOpacity="0.9"/>
+        <stop offset="50%" stopColor="#ff6600" stopOpacity="0.9"/>
+        <stop offset="100%" stopColor="#cc0000" stopOpacity="0.8"/>
+      </linearGradient>
+      <linearGradient id="flame-inner" x1="30" y1="25" x2="30" y2="52" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#ffffff" />
+        <stop offset="40%" stopColor="#ffff00" />
+        <stop offset="100%" stopColor="#ff9900" />
+      </linearGradient>
+      <linearGradient id="candle-body" x1="20" y1="56" x2="40" y2="56" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#e6e4e0" />
+        <stop offset="20%" stopColor="#fdfbf7" />
+        <stop offset="50%" stopColor="#ffffff" />
+        <stop offset="80%" stopColor="#f0eee9" />
+        <stop offset="100%" stopColor="#dcdad5" />
+      </linearGradient>
+    </defs>
+  </svg>
+);
+>>>>>>> REPLACE
+        <div className="max-w-5xl mx-auto px-4 mb-10 text-center">
+          <div className="inline-flex items-center justify-center p-4 rounded-full bg-slate-900/50 border border-amber-500/20 mb-6 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
+            <RealisticCandle className="w-10 h-16" />
+          </div>
+          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 rounded-full px-8 py-6 text-sm font-bold tracking-widest uppercase border-none transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:-translate-y-1">
+                <Plus className="w-5 h-5 mr-2" />
+                Dodaj wpis
+              </Button>
+            </DialogTrigger>
+          {/* Filters & Search */}
+          <div className="flex flex-wrap justify-center gap-2 mb-8">
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("all")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "all" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              Wszystkie
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("nekrolog")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "nekrolog" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <CrossIcon className="w-2.5 h-3.5 mr-2" /> Nekrologi
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("wspomnienie")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "wspomnienie" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <BookOpen className="w-3.5 h-3.5 mr-2" /> Wspomnienia
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("pozegnanie")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "pozegnanie" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <Feather className="w-3.5 h-3.5 mr-2" /> Pożegnania
+            </Button>
+          </div>
+
+        <div className="max-w-5xl mx-auto px-4 mb-10 text-center">
+          <div className="inline-flex items-center justify-center p-4 rounded-full bg-slate-900/50 border border-amber-500/20 mb-6 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
+            <RealisticCandle className="w-10 h-16" />
+          </div>
+          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-500 hover:to-amber-400 rounded-full px-8 py-6 text-sm font-bold tracking-widest uppercase border-none transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:-translate-y-1">
+                <Plus className="w-5 h-5 mr-2" />
+                Dodaj wpis
+              </Button>
+            </DialogTrigger>
+          {/* Filters & Search */}
+          <div className="flex flex-wrap justify-center gap-2 mb-8">
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("all")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "all" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              Wszystkie
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("nekrolog")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "nekrolog" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <CrossIcon className="w-2.5 h-3.5 mr-2" /> Nekrologi
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("wspomnienie")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "wspomnienie" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <BookOpen className="w-3.5 h-3.5 mr-2" /> Wspomnienia
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTypeFilter("pozegnanie")}
+              className={`rounded-full border px-5 py-2 font-bold tracking-widest uppercase text-[10px] transition-all duration-300 ${typeFilter === "pozegnanie" ? "bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "bg-[#080c17] border-amber-500/20 text-slate-400 hover:border-amber-500/40 hover:text-amber-400"}`}
+            >
+              <Feather className="w-3.5 h-3.5 mr-2" /> Pożegnania
+            </Button>
+          </div>
+<<<<<<< SEARCH
+
+                </Link>
+              );
+            })}
+          </div>
+
+          {status === "CanLoadMore" && (
+            <div className="mt-16 text-center">
+              <Button onClick={() => loadMore(12)} variant="outline" className="rounded-none px-10 py-6 font-bold border border-amber-500/30 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 bg-transparent tracking-widest uppercase transition-all duration-300">
+                Załaduj więcej wpisów
+              </Button>
+            </div>
+          )}
+        </div>
+      </main>
+      
+      <Footer />
+    </div>
+  );
+}

@@ -1,0 +1,60 @@
+type ArticleEditorState = {
+  // Pola bazowe
+  title: string;
+  slug: string;
+  lead: string;
+  content: string; // Tiptap HTML
+  contentBlocks: StructuralBlock[]; // bloki poza Tiptap
+  featuredImage: string;
+  author: string;
+  authorId: string | null;
+
+  // Taksonomia
+  category: CategoryKey;
+  articleType: ArticleTypeKey; // news | interview | analysis | report | opinion | dialog | announcement | sponsored
+  tags: string[];
+
+  // Publikacja
+  status: "draft" | "published" | "scheduled" | "archived";
+  publishedAt: string;
+  scheduledAt: string;
+  isFeatured: boolean;
+  isPatronage: boolean;
+  hideInReels: boolean;
+
+  // SEO
+  seoTitle: string;
+  seoDescription: string;
+  ogImage: string;
+
+  // Wygląd
+  layout: LayoutKey;
+  graphicsLayout: GraphicsLayoutKey;
+  categoryLayout: CategoryLayoutKey;
+  articleElements: ArticleElement[];
+  authorFooterStyle: string;
+
+  // Źródła
+  sources: string[];
+  bibliography: string;
+
+  // Pola kategorii (opcjonalne, zależne od category)
+  sport?: ArticleSportData;
+  politics?: ArticlePoliticsData;
+  investment?: ArticleInvestmentData;
+  ourActions?: ArticleOurActionsData;
+  bydgoszczanie?: ArticleBydgoszczanieData;
+
+  // Pola typu (opcjonalne, zależne od articleType)
+  interview?: ArticleInterviewData;
+  analysis?: ArticleAnalysisData;
+  report?: ArticleReportData;
+  opinion?: ArticleOpinionData;
+  dialog?: ArticleDialogData;
+  announcement?: ArticleAnnouncementData;
+  sponsored?: ArticleSponsoredData;
+
+  // Moduły specjalne
+  poll?: ArticlePollData;
+  quiz?: ArticleQuizData;
+};
