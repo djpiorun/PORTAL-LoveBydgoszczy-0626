@@ -6,6 +6,22 @@ import {
 import { toast } from "sonner";
 import { ADMIN_CATEGORY_DEFINITIONS, type AdminCategorySubcategory } from "@/lib/adminCategories";
 import { apiFetch } from "@/lib/api-client";
+import {
+  createCategoryEntity,
+  deleteCategoryEntity,
+  fetchCategoryEntities,
+  updateCategoryEntity,
+} from "@/lib/category-entities-api";
+import {
+  fetchCategoryHeroConfig,
+  updateCategoryHeroConfig,
+} from "@/lib/category-hero-api";
+import {
+  createAdminCategory,
+  deleteAdminCategory,
+  fetchAdminCategories,
+  updateAdminCategory,
+} from "@/lib/settings-api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -542,7 +558,7 @@ export default function CategorySettingsSection() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any[]>("/admin/categories");
+        const response = await fetchAdminCategories();
         if (!active) return;
         setCategories(response.map(normalizeCategory));
       } catch (error) {
@@ -633,7 +649,7 @@ export default function CategorySettingsSection() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any[]>(`/admin/category-entities?category_key=${activeCategoryKey}`);
+        const response = await fetchCategoryEntities(activeCategoryKey);
         if (active) setCategoryEntities(response.map(normalizeEntity));
       } catch (error) {
         console.warn("Category entities API unavailable", error);
@@ -651,7 +667,7 @@ export default function CategorySettingsSection() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/category-hero-config/sport");
+        const response = await fetchCategoryHeroConfig("sport");
         if (active) setSportHeroConfig(normalizeHeroConfig(response));
       } catch (error) {
         console.warn("Sport hero config API unavailable", error);
@@ -669,7 +685,7 @@ export default function CategorySettingsSection() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/category-hero-config/polityka");
+        const response = await fetchCategoryHeroConfig("polityka");
         if (active) setPoliticsHeroConfig(normalizeHeroConfig(response));
       } catch (error) {
         console.warn("Politics hero config API unavailable", error);
@@ -687,7 +703,7 @@ export default function CategorySettingsSection() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/category-hero-config/inwestycje");
+        const response = await fetchCategoryHeroConfig("inwestycje");
         if (active) setInvestmentsHeroConfig(normalizeHeroConfig(response));
       } catch (error) {
         console.warn("Investments hero config API unavailable", error);
@@ -714,8 +730,6 @@ export default function CategorySettingsSection() {
     isActive: boolean;
     isDefault?: boolean;
   }) => {
-    const endpoint = payload.id ? `/admin/categories/${payload.id}` : "/admin/categories";
-    const method = payload.id ? "PUT" : "POST";
     const body = {
       id: payload.id,
       key: payload.key,
@@ -750,7 +764,9 @@ export default function CategorySettingsSection() {
       isDefault: payload.isDefault,
     };
     try {
-      const response = await apiFetch<any>(endpoint, { method, body });
+      const response = payload.id
+        ? await updateAdminCategory(payload.id, body)
+        : await createAdminCategory(body);
       const normalized = normalizeCategory(response);
       setCategories((prev) => {
         const index = prev.findIndex((cat) => (normalized._id && cat._id === normalized._id) || cat.key === normalized.key);
@@ -779,7 +795,7 @@ export default function CategorySettingsSection() {
 
   const deleteCategory = async ({ id }: { id: string }) => {
     try {
-      await apiFetch<void>(`/admin/categories/${id}`, { method: "DELETE" });
+      await deleteAdminCategory(id);
       setCategories((prev) => prev.filter((cat) => cat._id !== id));
       return { isLocal: false };
     } catch (error) {
@@ -971,8 +987,6 @@ export default function CategorySettingsSection() {
     isActive: boolean;
     order: number;
   }) => {
-    const endpoint = payload.id ? `/admin/category-entities/${payload.id}` : "/admin/category-entities";
-    const method = payload.id ? "PUT" : "POST";
     const body = {
       id: payload.id,
       category_key: payload.categoryKey,
@@ -989,7 +1003,9 @@ export default function CategorySettingsSection() {
       order: payload.order,
     };
     try {
-      const response = await apiFetch<any>(endpoint, { method, body });
+      const response = payload.id
+        ? await updateCategoryEntity(payload.id, body)
+        : await createCategoryEntity(body);
       const normalized = normalizeEntity(response);
       setCategoryEntities((prev) => upsertById(prev, normalized));
       return { item: normalized, isLocal: false };
@@ -1003,7 +1019,7 @@ export default function CategorySettingsSection() {
 
   const removeCategoryEntity = async ({ id }: { id: string }) => {
     try {
-      await apiFetch<void>(`/admin/category-entities/${id}`, { method: "DELETE" });
+      await deleteCategoryEntity(id);
       setCategoryEntities((prev) => removeById(prev, id));
       return { isLocal: false };
     } catch (error) {
@@ -1033,7 +1049,7 @@ export default function CategorySettingsSection() {
       if (categoryKey === "inwestycje") setInvestmentsHeroConfig(data);
     };
     try {
-      const response = await apiFetch<any>(`/admin/category-hero-config/${categoryKey}`, { method: "PUT", body });
+      const response = await updateCategoryHeroConfig(categoryKey, body);
       const normalized = normalizeHeroConfig(response);
       setConfig(normalized);
       return { isLocal: false };

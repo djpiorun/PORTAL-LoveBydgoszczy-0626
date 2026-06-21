@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2, Search, Mail, Phone } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsInquiry, fetchAdsInquiries, updateAdsInquiryStatus } from "@/lib/ads-api";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   new: { label: "Nowe", variant: "default" },
@@ -62,9 +62,9 @@ export function InquiriesTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/inquiries");
+        const response = await fetchAdsInquiries();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setInquiries(data.map(normalizeInquiry));
       } catch (error) {
         console.warn("Ads inquiries API unavailable", error);
@@ -80,10 +80,7 @@ export function InquiriesTab() {
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
-      const response = await apiFetch<any>(`/admin/ads/inquiries/${id}/status`, {
-        method: "PUT",
-        body: { status },
-      });
+      const response = await updateAdsInquiryStatus(id, { status });
       const updated = normalizeInquiry(response?.data ?? response ?? { id, status });
       setInquiries((prev) => upsertById(prev, updated));
       toast.success("Status zaktualizowany");
@@ -97,7 +94,7 @@ export function InquiriesTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć to zapytanie?")) return;
     try {
-      await apiFetch(`/admin/ads/inquiries/${id}`, { method: "DELETE" });
+      await deleteAdsInquiry(id);
       setInquiries((prev) => removeById(prev, id));
       toast.success("Zapytanie usunięte");
     } catch (error) {

@@ -2,7 +2,12 @@ import { Save, Globe, Mail, Phone, MapPin, Facebook, Instagram, Youtube, Twitter
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import CategorySettingsSection from "@/components/admin/CategorySettingsSection";
-import { apiFetch } from "@/lib/api-client";
+import {
+  fetchAdminSettings,
+  fetchGtfsMetadata,
+  updateAdminSettings,
+  updateGtfsData,
+} from "@/lib/settings-api";
 
 type SettingsFormData = {
   portalName: string;
@@ -96,8 +101,7 @@ export default function AdminSettings() {
     let active = true;
     const loadSettings = async () => {
       try {
-        const response = await apiFetch<any>("/admin/settings");
-        const data = response?.data ?? response;
+        const data = await fetchAdminSettings();
         if (!active || !data) return;
         setFormData((prev) => ({ ...prev, ...normalizeSettings(data) }));
       } catch (error) {
@@ -107,8 +111,7 @@ export default function AdminSettings() {
 
     const loadGtfsMetadata = async () => {
       try {
-        const response = await apiFetch<any>("/admin/gtfs/metadata");
-        const data = response?.data ?? response;
+        const data = await fetchGtfsMetadata();
         if (!active) return;
         setGtfsMetadata(data ? normalizeGtfsMetadata(data) : null);
       } catch (error) {
@@ -129,8 +132,7 @@ export default function AdminSettings() {
     setIsUpdatingGtfs(true);
     toast.info("Rozpoczęto aktualizację danych GTFS. Może to potrwać kilka minut...");
     try {
-      const response = await apiFetch<any>("/admin/gtfs/update", { method: "POST" });
-      const data = response?.data ?? response;
+      const data = await updateGtfsData();
       const updatedAt = data?.last_update ?? data?.updated_at ?? new Date().toISOString();
       setGtfsMetadata({ last_update: updatedAt });
       toast.success("Dane GTFS zostały zaktualizowane pomyślnie!");
@@ -200,11 +202,7 @@ export default function AdminSettings() {
     };
 
     try {
-      const response = await apiFetch<any>("/admin/settings", {
-        method: "PUT",
-        body: payload,
-      });
-      const data = response?.data ?? response;
+      const data = await updateAdminSettings(payload);
       if (data) setFormData((prev) => ({ ...prev, ...normalizeSettings(data) }));
       toast.success("Ustawienia zostały zapisane");
     } catch (error) {

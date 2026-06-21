@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, LayoutTemplate } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsPlacement, fetchAdsPlacements, saveAdsPlacement } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 const PLACEMENT_TYPES = [
@@ -145,9 +145,9 @@ export function PlacementsTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/placements");
+        const response = await fetchAdsPlacements();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setPlacements(data.map(normalizePlacement));
       } catch (error) {
         console.warn("Ads placements API unavailable", error);
@@ -200,18 +200,12 @@ export function PlacementsTab() {
     const payload = buildPayload();
     try {
       if (editingId) {
-        const response = await apiFetch<any>(`/admin/ads/placements/${editingId}`, {
-          method: "PUT",
-          body: payload,
-        });
+        const response = await saveAdsPlacement(editingId, payload);
         const updated = normalizePlacement(response?.data ?? response ?? { id: editingId, ...payload });
         setPlacements((prev) => upsertById(prev, updated));
         toast.success("Miejsce zaktualizowane");
       } else {
-        const response = await apiFetch<any>("/admin/ads/placements", {
-          method: "POST",
-          body: payload,
-        });
+        const response = await saveAdsPlacement(null, payload);
         const created = normalizePlacement(response?.data ?? response ?? { id: createLocalId(), ...payload });
         setPlacements((prev) => upsertById(prev, created));
         toast.success("Miejsce dodane");
@@ -230,7 +224,7 @@ export function PlacementsTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć to miejsce reklamowe?")) return;
     try {
-      await apiFetch(`/admin/ads/placements/${id}`, { method: "DELETE" });
+      await deleteAdsPlacement(id);
       setPlacements((prev) => removeById(prev, id));
       toast.success("Miejsce usunięte");
     } catch (error) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { fetchReelStories } from "@/lib/reels-api";
 import { motion } from "framer-motion";
 import StoryViewer from "./StoryViewer";
 import { Sparkles, Play } from "lucide-react";
@@ -79,7 +80,7 @@ export default function StoriesSection() {
       setIsLoading(true);
       const [storiesResult, reelsResult] = await Promise.allSettled([
         apiFetch<StoriesResponse | Story[]>("/stories/active"),
-        apiFetch<ReelsResponse | Reel[]>("/reels/stories"),
+        fetchReelStories(),
       ]);
 
       if (!isMounted) return;
@@ -98,7 +99,7 @@ export default function StoriesSection() {
 
       if (reelsResult.status === "fulfilled") {
         const data = reelsResult.value;
-        nextReels = Array.isArray(data) ? data : data?.reels ?? [];
+        nextReels = Array.isArray(data) ? data : [];
       } else {
         hadError = true;
       }

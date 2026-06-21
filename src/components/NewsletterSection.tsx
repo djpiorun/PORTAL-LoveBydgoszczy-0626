@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api-client";
+import { subscribeToNewsletter } from "@/lib/newsletter-api";
 import { Mail, CheckCircle, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,10 +14,7 @@ export default function NewsletterSection() {
     if (!email) return;
     setLoading(true);
     try {
-      const result = await apiFetch<{ success?: boolean; message?: string }>("/newsletter/subscribe", {
-        method: "POST",
-        body: { email },
-      });
+      const result = await subscribeToNewsletter(email);
       const success = result?.success ?? true;
       if (success) {
         setSubscribed(true);

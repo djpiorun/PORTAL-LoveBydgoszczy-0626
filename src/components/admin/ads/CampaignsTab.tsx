@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, Search, Megaphone } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsCampaign, fetchAdsCampaigns, fetchAdsPartnersAdmin, saveAdsCampaign } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -189,9 +189,9 @@ export function CampaignsTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/campaigns");
+        const response = await fetchAdsCampaigns();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setCampaigns(data.map(normalizeCampaign));
       } catch (error) {
         console.warn("Ads campaigns API unavailable", error);
@@ -199,9 +199,9 @@ export function CampaignsTab() {
       }
 
       try {
-        const response = await apiFetch<any>("/admin/ads/partners");
+        const response = await fetchAdsPartnersAdmin();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setPartners(data.map(normalizePartner));
       } catch (error) {
         console.warn("Ads partners API unavailable", error);
@@ -259,18 +259,12 @@ export function CampaignsTab() {
     const payload = buildPayload();
     try {
       if (editingId) {
-        const response = await apiFetch<any>(`/admin/ads/campaigns/${editingId}`, {
-          method: "PUT",
-          body: payload,
-        });
+        const response = await saveAdsCampaign(editingId, payload);
         const updated = normalizeCampaign(response?.data ?? response ?? { id: editingId, ...payload });
         setCampaigns((prev) => upsertById(prev, updated));
         toast.success("Kampania zaktualizowana");
       } else {
-        const response = await apiFetch<any>("/admin/ads/campaigns", {
-          method: "POST",
-          body: payload,
-        });
+        const response = await saveAdsCampaign(null, payload);
         const created = normalizeCampaign(response?.data ?? response ?? { id: createLocalId(), ...payload });
         setCampaigns((prev) => upsertById(prev, created));
         toast.success("Kampania utworzona");
@@ -289,7 +283,7 @@ export function CampaignsTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć tę kampanię?")) return;
     try {
-      await apiFetch(`/admin/ads/campaigns/${id}`, { method: "DELETE" });
+      await deleteAdsCampaign(id);
       setCampaigns((prev) => removeById(prev, id));
       toast.success("Kampania usunięta");
     } catch (error) {
@@ -301,10 +295,7 @@ export function CampaignsTab() {
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
-      const response = await apiFetch<any>(`/admin/ads/campaigns/${id}`, {
-        method: "PUT",
-        body: { status },
-      });
+      const response = await saveAdsCampaign(id, { status });
       const updated = normalizeCampaign(response?.data ?? response ?? { id, status });
       setCampaigns((prev) => upsertById(prev, updated));
       toast.success("Status zaktualizowany");

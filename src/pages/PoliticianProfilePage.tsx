@@ -5,7 +5,7 @@ import { useParams, Link } from "react-router";
 import { motion } from "framer-motion";
 import { Building2, Globe, Facebook, Twitter, ChevronLeft, FileText, Scale, ArrowRight, Quote } from "lucide-react";
 import { getArticleHref } from "@/lib/articleRouting";
-import { apiFetch } from "@/lib/api-client";
+import { fetchPoliticianBySlug } from "@/lib/politicians-api";
 import { fetchArticles } from "@/lib/articles-api";
 import { toast } from "sonner";
 
@@ -39,7 +39,7 @@ export default function PoliticianProfilePage() {
     }
     let active = true;
     setPolitician(undefined);
-    apiFetch(`/politicians/${slug}`)
+    fetchPoliticianBySlug(slug)
       .then((payload) => {
         if (!active) return;
         const normalized = normalizePoliticianPayload(payload);

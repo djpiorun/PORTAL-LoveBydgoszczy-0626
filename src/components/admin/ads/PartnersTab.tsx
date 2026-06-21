@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, Search, Users, Globe, Mail, Phone, User } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsPartner, fetchAdsCampaigns, fetchAdsPartnersAdmin, saveAdsPartner } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 const PARTNER_TYPES = [
@@ -183,9 +183,9 @@ export function PartnersTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/partners");
+        const response = await fetchAdsPartnersAdmin();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setPartners(data.map(normalizePartner));
       } catch (error) {
         console.warn("Ads partners API unavailable", error);
@@ -193,9 +193,9 @@ export function PartnersTab() {
       }
 
       try {
-        const response = await apiFetch<any>("/admin/ads/campaigns");
+        const response = await fetchAdsCampaigns();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setCampaigns(data.map(normalizeCampaign));
       } catch (error) {
         console.warn("Ads campaigns API unavailable", error);
@@ -255,18 +255,12 @@ export function PartnersTab() {
     const payload = buildPayload();
     try {
       if (editingId) {
-        const response = await apiFetch<any>(`/admin/ads/partners/${editingId}`, {
-          method: "PUT",
-          body: payload,
-        });
+        const response = await saveAdsPartner(editingId, payload);
         const updated = normalizePartner(response?.data ?? response ?? { id: editingId, ...payload });
         setPartners((prev) => upsertById(prev, updated));
         toast.success("Partner zaktualizowany");
       } else {
-        const response = await apiFetch<any>("/admin/ads/partners", {
-          method: "POST",
-          body: payload,
-        });
+        const response = await saveAdsPartner(null, payload);
         const created = normalizePartner(response?.data ?? response ?? { id: createLocalId(), ...payload });
         setPartners((prev) => upsertById(prev, created));
         toast.success("Partner dodany");
@@ -285,7 +279,7 @@ export function PartnersTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć tego partnera?")) return;
     try {
-      await apiFetch(`/admin/ads/partners/${id}`, { method: "DELETE" });
+      await deleteAdsPartner(id);
       setPartners((prev) => removeById(prev, id));
       toast.success("Partner usunięty");
     } catch (error) {

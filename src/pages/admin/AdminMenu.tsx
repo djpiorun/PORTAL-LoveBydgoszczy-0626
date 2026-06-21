@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api-client";
+import {
+  createMenuItem,
+  deleteMenuItem,
+  fetchMenuItems,
+  seedMenuItems,
+  updateMenuItem,
+} from "@/lib/menu-api";
 import {
   Plus, Pencil, Trash2, GripVertical, Eye, EyeOff, Save, X,
 } from "lucide-react";
@@ -103,8 +109,7 @@ export default function AdminMenu() {
     let active = true;
     const loadItems = async () => {
       try {
-        const response = await apiFetch<any>("/admin/menu-items");
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = await fetchMenuItems();
         if (!active) return;
         setItems(data.map(normalizeItem));
       } catch (error) {
@@ -121,7 +126,7 @@ export default function AdminMenu() {
 
   const handleSeed = async () => {
     try {
-      const response = await apiFetch<any>("/admin/menu-items/seed", { method: "POST" });
+      const response = await seedMenuItems();
       const seeded = response?.seeded ?? response?.data?.seeded;
       const data = response?.items ?? response?.data?.items ?? response?.data ?? response;
       if (Array.isArray(data)) {
@@ -179,10 +184,9 @@ export default function AdminMenu() {
         parent_id: form.parentId || null,
         show_when_scrolled: form.showWhenScrolled ?? false,
       };
-      const response = await apiFetch<any>(form.id ? `/admin/menu-items/${form.id}` : "/admin/menu-items", {
-        method: form.id ? "PUT" : "POST",
-        body: payload,
-      });
+      const response = form.id
+        ? await updateMenuItem(form.id, payload)
+        : await createMenuItem(payload);
       const data = response?.data ?? response ?? {};
       const normalized = normalizeItem({ id: data?.id ?? data?._id ?? form.id ?? createLocalId(), ...payload, ...data });
       setItems((prev) => upsertById(prev, normalized));
@@ -202,7 +206,7 @@ export default function AdminMenu() {
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
-      await apiFetch(`/admin/menu-items/${id}`, { method: "DELETE" });
+      await deleteMenuItem(id);
       setItems((prev) => removeById(prev, id));
       toast.success("Pozycja usunięta");
     } catch (error) {
@@ -218,20 +222,17 @@ export default function AdminMenu() {
     const nextActive = !item.isActive;
     setItems((prev) => prev.map((entry) => (entry._id === item._id ? { ...entry, isActive: nextActive } : entry)));
     try {
-      await apiFetch(`/admin/menu-items/${item._id}`, {
-        method: "PUT",
-        body: {
-          label: item.label,
-          path: item.path,
-          icon: item.icon,
-          tooltip: item.tooltip ?? null,
-          order: item.order,
-          is_active: nextActive,
-          placement: item.placement,
-          type: item.type,
-          parent_id: item.parentId ?? null,
-          show_when_scrolled: item.showWhenScrolled ?? false,
-        },
+      await updateMenuItem(item._id, {
+        label: item.label,
+        path: item.path,
+        icon: item.icon,
+        tooltip: item.tooltip ?? null,
+        order: item.order,
+        is_active: nextActive,
+        placement: item.placement,
+        type: item.type,
+        parent_id: item.parentId ?? null,
+        show_when_scrolled: item.showWhenScrolled ?? false,
       });
       toast.success(nextActive ? "Pokazano pozycję" : "Ukryto pozycję");
     } catch (error) {

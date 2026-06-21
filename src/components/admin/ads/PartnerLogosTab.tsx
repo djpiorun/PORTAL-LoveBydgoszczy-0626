@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Image as ImageIcon, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsPartnersAdmin, saveAdsPartner } from "@/lib/ads-api";
 
 type Partner = {
   id: string;
@@ -43,9 +43,9 @@ export function PartnerLogosTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/partners");
+        const response = await fetchAdsPartnersAdmin();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setPartners(data.map(normalizePartner));
       } catch (error) {
         console.warn("Ads partners API unavailable", error);
@@ -67,10 +67,7 @@ export function PartnerLogosTab() {
 
   const updatePartner = async (id: string, payload: Record<string, unknown>) => {
     try {
-      const response = await apiFetch<any>(`/admin/ads/partners/${id}`, {
-        method: "PUT",
-        body: payload,
-      });
+      const response = await saveAdsPartner(id, payload);
       const updated = normalizePartner(response?.data ?? response ?? { id, ...payload });
       setPartners((prev) => upsertById(prev, updated));
       return true;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Heart, Send, MessageCircle, CornerDownRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiFetch } from "@/lib/api-client";
+import { createComment, fetchComments, likeComment } from "@/lib/comments-api";
 
 interface CommentsProps {
   targetId: string;
@@ -57,15 +57,12 @@ function ReplyForm({ targetId, targetType, parentId, onClose, onSaved }: ReplyFo
     if (!content.trim()) return;
     setIsSubmitting(true);
     try {
-      await apiFetch("/comments", {
-        method: "POST",
-        body: {
-          target_id: targetId,
-          target_type: targetType,
-          author_name: authorName.trim() || "",
-          content: content.trim(),
-          parent_id: parentId,
-        },
+      await createComment({
+        target_id: targetId,
+        target_type: targetType,
+        author_name: authorName.trim() || "",
+        content: content.trim(),
+        parent_id: parentId,
       });
       setContent("");
       await onSaved();
@@ -133,7 +130,7 @@ function CommentItem({ comment, replies, targetId, targetType, depth = 0, onSave
   const hasAuthor = comment.authorName && comment.authorName.trim() !== "" && comment.authorName !== "Anonim";
 
   const handleLike = async () => {
-    await apiFetch(`/comments/${comment.id}/like`, { method: "POST" });
+    await likeComment(comment.id);
     await onSaved();
   };
 
@@ -215,8 +212,8 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
   const loadComments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch<any>(`/comments?target_id=${encodeURIComponent(targetId)}&target_type=${encodeURIComponent(targetType)}`);
-      const data = Array.isArray(response) ? response : response?.data ?? [];
+      const response = await fetchComments(targetId, targetType);
+      const data = Array.isArray(response) ? response : response ?? [];
       const items = data.map(normalizeComment);
       setComments(items);
     } catch {
@@ -248,14 +245,11 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
 
     setIsSubmitting(true);
     try {
-      await apiFetch("/comments", {
-        method: "POST",
-        body: {
-          target_id: targetId,
-          target_type: targetType,
-          author_name: authorName.trim() || "",
-          content: content.trim(),
-        },
+      await createComment({
+        target_id: targetId,
+        target_type: targetType,
+        author_name: authorName.trim() || "",
+        content: content.trim(),
       });
       setContent("");
       await loadComments();

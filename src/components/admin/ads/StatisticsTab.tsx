@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Eye, MousePointer, DollarSign } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsDashboardStats } from "@/lib/ads-api";
 
 type AdsCampaignStat = {
   _id: string;
@@ -69,7 +69,7 @@ export function StatisticsTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        const response = await fetchAdsDashboardStats();
         if (!active) return;
         setStats(normalizeStats(response));
       } catch (error) {

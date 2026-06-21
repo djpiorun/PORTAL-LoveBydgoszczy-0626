@@ -2,7 +2,7 @@ import { Trash2, ExternalLink, ChevronLeft, ChevronRight, CheckCircle, XCircle, 
 import { toast } from "sonner";
 import { Link } from "react-router";
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteComment, fetchAdminComments, updateCommentStatus } from "@/lib/comments-api";
 
 type AdminComment = {
   id: string;
@@ -35,8 +35,8 @@ export default function AdminComments() {
   const loadComments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch<any>("/comments/admin");
-      const data = Array.isArray(response) ? response : response?.data ?? [];
+      const response = await fetchAdminComments();
+      const data = Array.isArray(response) ? response : response ?? [];
       const items = data.map(normalizeComment);
       setComments(items);
     } catch (error: any) {
@@ -61,14 +61,14 @@ export default function AdminComments() {
 
   const handleDelete = async (id: string) => {
     if (confirm("Czy na pewno chcesz usunąć ten komentarz?")) {
-      await apiFetch(`/comments/${id}`, { method: "DELETE" });
+      await deleteComment(id);
       setComments((prev) => prev?.filter((comment) => comment.id !== id) ?? null);
       toast.success("Komentarz usunięty");
     }
   };
 
   const handleUpdateStatus = async (id: string, status: "approved" | "rejected") => {
-    await apiFetch(`/comments/${id}/status`, { method: "PUT", body: { status } });
+    await updateCommentStatus(id, status);
     setComments((prev) =>
       prev?.map((comment) => (comment.id === id ? { ...comment, status } : comment)) ?? null,
     );

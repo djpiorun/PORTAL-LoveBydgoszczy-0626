@@ -4,7 +4,7 @@ import Footer from "@/components/Footer";
 import { User, Search, Building2, Mail, Globe, Facebook, Twitter } from "lucide-react";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
-import { apiFetch } from "@/lib/api-client";
+import { fetchPoliticians } from "@/lib/politicians-api";
 import { toast } from "sonner";
 
 const normalizePolitician = (politician: any) => ({
@@ -33,7 +33,7 @@ export default function PoliticiansDatabase() {
 
   useEffect(() => {
     let active = true;
-    apiFetch("/politicians")
+    fetchPoliticians()
       .then((payload) => {
         if (!active) return;
         setPoliticians(normalizePoliticiansPayload(payload));

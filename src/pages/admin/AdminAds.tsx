@@ -15,7 +15,7 @@ import { SettingsTab } from "@/components/admin/ads/SettingsTab";
 import { InstructionsTab } from "@/components/admin/ads/InstructionsTab";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsDashboardStats } from "@/lib/ads-api";
 
 type AdminAdsTab =
   | "dashboard"
@@ -76,7 +76,7 @@ export default function AdminAds() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        const response = await fetchAdsDashboardStats();
         if (!active) return;
         setStats({
           activeCampaigns: response?.active_campaigns ?? response?.activeCampaigns ?? 0,

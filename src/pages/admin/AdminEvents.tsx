@@ -5,6 +5,7 @@ import EventForm from "@/components/admin/EventForm";
 import EventList from "@/components/admin/EventList";
 import { uploadMediaAsset } from "@/lib/media-upload";
 import { apiFetch } from "@/lib/api-client";
+import { deleteAdminEvent, fetchAdminEvents, saveAdminEvent } from "@/lib/events-api";
 
 type EventRecord = {
   _id: string;
@@ -63,8 +64,8 @@ export default function AdminEvents() {
     let active = true;
     const loadEvents = async () => {
       try {
-        const response = await apiFetch<any>("/admin/events");
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const response = await fetchAdminEvents();
+        const data = Array.isArray(response) ? response : response ?? [];
         if (!active) return;
         setEvents(data.map(normalizeEvent));
       } catch (error) {
@@ -198,10 +199,7 @@ export default function AdminEvents() {
         organizer: eventData.organizer,
         featured: eventData.featured,
       };
-      const response = await apiFetch<any>(editingId === "new" ? "/admin/events" : `/admin/events/${editingId}`, {
-        method: editingId === "new" ? "POST" : "PUT",
-        body: payload,
-      });
+      const response = await saveAdminEvent(editingId === "new" ? null : editingId, payload);
       const data = response?.data ?? response ?? {};
       const normalized = normalizeEvent({ id: data?.id ?? data?._id ?? (editingId === "new" ? createLocalId() : editingId), ...payload, ...data });
       setEvents((prev) => upsertById(prev, normalized));
@@ -219,7 +217,7 @@ export default function AdminEvents() {
   const handleDelete = async (id: string) => {
     if (confirm("Czy na pewno chcesz usunąć to wydarzenie?")) {
       try {
-        await apiFetch(`/admin/events/${id}`, { method: "DELETE" });
+        await deleteAdminEvent(id);
         setEvents((prev) => removeById(prev, id));
         toast.success("Wydarzenie usunięte");
       } catch (error) {

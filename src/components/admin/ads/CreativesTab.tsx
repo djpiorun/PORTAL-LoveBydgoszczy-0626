@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, Search, Image as ImageIcon } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsCreative, fetchAdsCampaigns, fetchAdsCreatives, saveAdsCreative } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 const AD_TYPES = [
@@ -184,9 +184,9 @@ export function CreativesTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/creatives");
+        const response = await fetchAdsCreatives();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setCreatives(data.map(normalizeCreative));
       } catch (error) {
         console.warn("Ads creatives API unavailable", error);
@@ -194,9 +194,9 @@ export function CreativesTab() {
       }
 
       try {
-        const response = await apiFetch<any>("/admin/ads/campaigns");
+        const response = await fetchAdsCampaigns();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setCampaigns(data.map(normalizeCampaign));
       } catch (error) {
         console.warn("Ads campaigns API unavailable", error);
@@ -252,18 +252,12 @@ export function CreativesTab() {
     const payload = buildPayload();
     try {
       if (editingId) {
-        const response = await apiFetch<any>(`/admin/ads/creatives/${editingId}`, {
-          method: "PUT",
-          body: payload,
-        });
+        const response = await saveAdsCreative(editingId, payload);
         const updated = normalizeCreative(response?.data ?? response ?? { id: editingId, ...payload });
         setCreatives((prev) => upsertById(prev, updated));
         toast.success("Kreacja zaktualizowana");
       } else {
-        const response = await apiFetch<any>("/admin/ads/creatives", {
-          method: "POST",
-          body: payload,
-        });
+        const response = await saveAdsCreative(null, payload);
         const created = normalizeCreative(response?.data ?? response ?? { id: createLocalId(), ...payload });
         setCreatives((prev) => upsertById(prev, created));
         toast.success("Kreacja dodana");
@@ -282,7 +276,7 @@ export function CreativesTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć tę kreację?")) return;
     try {
-      await apiFetch(`/admin/ads/creatives/${id}`, { method: "DELETE" });
+      await deleteAdsCreative(id);
       setCreatives((prev) => removeById(prev, id));
       toast.success("Kreacja usunięta");
     } catch (error) {
@@ -294,10 +288,7 @@ export function CreativesTab() {
 
   const handleToggle = async (id: string, current: boolean) => {
     try {
-      const response = await apiFetch<any>(`/admin/ads/creatives/${id}`, {
-        method: "PUT",
-        body: { is_active: !current },
-      });
+      const response = await saveAdsCreative(id, { is_active: !current });
       const updated = normalizeCreative(response?.data ?? response ?? { id, is_active: !current });
       setCreatives((prev) => upsertById(prev, updated));
       toast.success(current ? "Dezaktywowano" : "Aktywowano");

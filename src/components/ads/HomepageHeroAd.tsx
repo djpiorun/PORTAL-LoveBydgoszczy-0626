@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAds, trackAdClick, trackAdImpression } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 const normalizeCreative = (creative: any) => ({
@@ -27,10 +27,7 @@ export default function HomepageHeroAd() {
   const trackImpression = useCallback(async (creativeId: string) => {
     if (!creativeId) return;
     try {
-      await apiFetch("/ads/track-impression", {
-        method: "POST",
-        body: { creative_id: creativeId },
-      });
+      await trackAdImpression({ creative_id: creativeId });
     } catch (error) {
       console.warn("Ads impression tracking unavailable", error);
     }
@@ -39,10 +36,7 @@ export default function HomepageHeroAd() {
   const trackClick = useCallback(async (creativeId: string) => {
     if (!creativeId) return;
     try {
-      await apiFetch("/ads/track-click", {
-        method: "POST",
-        body: { creative_id: creativeId },
-      });
+      await trackAdClick({ creative_id: creativeId });
     } catch (error) {
       console.warn("Ads click tracking unavailable", error);
     }
@@ -52,7 +46,7 @@ export default function HomepageHeroAd() {
     let active = true;
     const loadAds = async () => {
       try {
-        const payload = await apiFetch("/ads?placement=home_top_banner");
+        const payload = await fetchAds({ placement: "home_top_banner" });
         if (!active) return;
         setAds(normalizeAdsPayload(payload));
       } catch (error) {

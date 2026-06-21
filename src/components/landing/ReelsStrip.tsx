@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Play, Heart, Eye, ChevronRight, Film } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchReels } from "@/lib/reels-api";
 import { toast } from "sonner";
 
 const categoryColors: Record<string, string> = {
@@ -55,7 +55,7 @@ export default function ReelsStrip() {
     let active = true;
     const loadReels = async () => {
       try {
-        const payload = await apiFetch("/reels?limit=8");
+        const payload = await fetchReels({ limit: 8 });
         if (!active) return;
         setReels(normalizeReelsPayload(payload));
       } catch (error) {

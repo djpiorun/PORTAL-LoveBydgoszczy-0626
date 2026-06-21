@@ -27,6 +27,52 @@ const SPORT_TYPE_LABEL: Record<string, string> = {
   inne: "Sport",
 };
 
+const normalizeHeroConfig = (payload: any) => {
+  const data = payload?.data ?? payload?.items ?? payload ?? [];
+  return Array.isArray(data)
+    ? data.map((item) => ({
+        itemId: item?.itemId ?? item?.item_id ?? item?.item ?? "",
+        order: item?.order ?? 0,
+        isVisible: item?.isVisible ?? item?.is_visible ?? true,
+      }))
+    : [];
+};
+
+const normalizeTeam = (team: any) => ({
+  _id: String(team?.id ?? team?._id ?? ""),
+  slug: team?.slug ?? "",
+  name: team?.name ?? "",
+  shortName: team?.shortName ?? team?.short_name ?? "",
+  logo: team?.logo ?? null,
+  sportType: team?.sportType ?? team?.sport_type ?? "",
+  league: team?.league ?? null,
+  city: team?.city ?? null,
+  stadium: team?.stadium ?? null,
+  website: team?.website ?? null,
+  isActive: team?.isActive ?? team?.is_active ?? true,
+});
+
+const normalizeTeamsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.teams ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeTeam) : [];
+};
+
+const normalizeMatch = (match: any) => ({
+  _id: String(match?.id ?? match?._id ?? ""),
+  homeTeamName: match?.homeTeamName ?? match?.home_team_name ?? "",
+  awayTeamName: match?.awayTeamName ?? match?.away_team_name ?? "",
+  homeScore: match?.homeScore ?? match?.home_score ?? "0",
+  awayScore: match?.awayScore ?? match?.away_score ?? "0",
+  sportType: match?.sportType ?? match?.sport_type ?? "",
+  matchStatus: match?.matchStatus ?? match?.match_status ?? "",
+  matchDate: match?.matchDate ?? match?.match_date ?? null,
+});
+
+const normalizeMatchesPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.matches ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeMatch) : [];
+};
+
 function SportSkeleton() {
   return (
     <div className="min-h-screen bg-background">
@@ -211,19 +257,12 @@ export default function SportPage() {
 
   useEffect(() => {
     let isMounted = true;
-    const normalizeList = (payload: any) => {
-      if (Array.isArray(payload)) return payload;
-      if (Array.isArray(payload?.data)) return payload.data;
-      if (Array.isArray(payload?.results)) return payload.results;
-      return [];
-    };
-
     const load = async () => {
       setIsLoading(true);
       const [articlesResult, teamsResult, heroResult, matchesResult] = await Promise.allSettled([
         fetchArticles({ category: "sport", limit: 50 }),
         apiFetch("/sport-teams"),
-        apiFetch("/category-hero-config?category_key=sport"),
+        apiFetch("/category-hero-config?category=sport"),
         apiFetch("/match-results/recent"),
       ]);
 
@@ -237,21 +276,21 @@ export default function SportPage() {
       }
 
       if (teamsResult.status === "fulfilled") {
-        setAllTeams(normalizeList(teamsResult.value));
+        setAllTeams(normalizeTeamsPayload(teamsResult.value));
       } else {
         setAllTeams([]);
         toast.error("Nie udało się pobrać listy drużyn.");
       }
 
       if (heroResult.status === "fulfilled") {
-        setHeroConfig(normalizeList(heroResult.value));
+        setHeroConfig(normalizeHeroConfig(heroResult.value));
       } else {
         setHeroConfig([]);
         toast.error("Nie udało się pobrać konfiguracji hero sportu.");
       }
 
       if (matchesResult.status === "fulfilled") {
-        setRecentMatches(normalizeList(matchesResult.value));
+        setRecentMatches(normalizeMatchesPayload(matchesResult.value));
       } else {
         setRecentMatches([]);
         toast.error("Nie udało się pobrać ostatnich wyników.");

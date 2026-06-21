@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, Save, X, Play, Eye, EyeOff, Film, Link, Facebook, Instagram, Youtube, Upload, Sparkles } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdminReel, fetchAdminReels, saveAdminReel, seedAdminReels } from "@/lib/reels-api";
 
 const CATEGORIES = [
   { key: "miasto", label: "Miasto" },
@@ -111,8 +111,7 @@ export default function AdminReels() {
     let active = true;
     const loadReels = async () => {
       try {
-        const response = await apiFetch<any>("/admin/reels");
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = await fetchAdminReels();
         if (!active) return;
         setReels(data.map(normalizeReel));
       } catch (error) {
@@ -175,10 +174,7 @@ export default function AdminReels() {
         show_in_stories: formData.showInStories,
       };
 
-      const response = await apiFetch<any>(editingId ? `/admin/reels/${editingId}` : "/admin/reels", {
-        method: editingId ? "PUT" : "POST",
-        body: payload,
-      });
+      const response = await saveAdminReel(editingId, payload);
       const data = response?.data ?? response ?? {};
       const normalized = normalizeReel({
         id: data?.id ?? data?._id ?? (editingId ? editingId : createLocalId()),
@@ -206,7 +202,7 @@ export default function AdminReels() {
   const handleDelete = async (id: string) => {
     if (!confirm("Usunąć tę rolkę?")) return;
     try {
-      await apiFetch(`/admin/reels/${id}`, { method: "DELETE" });
+      await deleteAdminReel(id);
       setReels((prev) => (prev ? removeById(prev, id) : prev));
       toast.success("Rolka usunięta");
     } catch {
@@ -217,7 +213,7 @@ export default function AdminReels() {
 
   const handleSeed = async () => {
     try {
-      const response = await apiFetch<any>("/admin/reels/seed", { method: "POST" });
+      const response = await seedAdminReels();
       const data = response?.data ?? response;
       const items = data?.items ?? data;
       if (Array.isArray(items)) {
