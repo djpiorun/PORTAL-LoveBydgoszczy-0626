@@ -1,0 +1,41 @@
+name: build-frontend
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+      VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
+      VITE_DIRECTORY_CONVEX_URL: ${{ secrets.VITE_DIRECTORY_CONVEX_URL }}
+      VITE_DIRECTORY_BASE_URL: ${{ secrets.VITE_DIRECTORY_BASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc -b --pretty false
+
+      - name: Build
+        run: bun run build
+
+      - name: Archive dist
+        run: tar -czf dist.tar.gz dist
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist
+            dist.tar.gz
