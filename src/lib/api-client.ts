@@ -20,18 +20,12 @@ type ApiFetchOptions = Omit<RequestInit, "body"> & {
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { body, headers, ...rest } = options;
   const token = getAuthToken();
-  const requestHeaders = new Headers();
+  const requestHeaders = new Headers(headers);
 
+  requestHeaders.set("Accept", "application/json");
   if (!(body instanceof FormData)) {
     requestHeaders.set("Content-Type", "application/json");
   }
-
-  if (headers) {
-    new Headers(headers).forEach((value, key) => {
-      requestHeaders.set(key, value);
-    });
-  }
-
   if (token) {
     requestHeaders.set("Authorization", `Bearer ${token}`);
   }
