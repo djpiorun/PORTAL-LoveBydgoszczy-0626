@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router";
-import { apiFetch } from "@/lib/api-client";
+import { fetchEvents } from "@/lib/events-api";
 import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -92,7 +92,7 @@ function MobileSearchPage() {
     }
 
     setIsLoadingEvents(true);
-    apiFetch<any>(`/events?search=${encodeURIComponent(query)}`)
+    fetchEvents({ search: query })
       .then((payload) => {
         if (!isMounted) return;
         const data = payload?.data ?? payload?.events ?? payload ?? [];
@@ -418,7 +418,7 @@ function DesktopSearchPage() {
     }
 
     setIsLoadingEvents(true);
-    apiFetch<any>(`/events?search=${encodeURIComponent(query)}`)
+    fetchEvents({ search: query })
       .then((payload) => {
         if (!isMounted) return;
         const data = payload?.data ?? payload?.events ?? payload ?? [];

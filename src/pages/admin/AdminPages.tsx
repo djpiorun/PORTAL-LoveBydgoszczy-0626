@@ -33,7 +33,20 @@ import {
   RefreshCcw,
   ShieldAlert,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import {
+  archivePage,
+  createPage,
+  deletePage,
+  duplicatePage,
+  fetchAdminPages,
+  fetchPageVersions,
+  hardDeletePage,
+  restorePage,
+  rollbackPage,
+  seedPages,
+  unarchivePage,
+  updatePage,
+} from "@/lib/pages-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -370,8 +383,7 @@ export default function AdminPages() {
     let active = true;
     const loadPages = async () => {
       try {
-        const response = await apiFetch<any>("/admin/pages");
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = await fetchAdminPages();
         if (!active) return;
         setPages(data.map(normalizePage));
       } catch (error) {
@@ -391,11 +403,11 @@ export default function AdminPages() {
       setVersionHistory([]);
       return;
     }
+    const formId = form.id;
     let active = true;
     const loadVersions = async () => {
       try {
-        const response = await apiFetch<any>(`/admin/pages/${form.id}/versions`);
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = await fetchPageVersions(formId);
         if (!active) return;
         setVersionHistory(data.map(normalizeVersion));
       } catch (error) {
@@ -570,13 +582,9 @@ export default function AdminPages() {
       };
 
       try {
-        const response = await apiFetch<any>(
-          currentForm.id ? `/admin/pages/${currentForm.id}` : "/admin/pages",
-          {
-            method: currentForm.id ? "PUT" : "POST",
-            body: payload,
-          },
-        );
+        const response = currentForm.id
+          ? await updatePage(currentForm.id, payload)
+          : await createPage(payload);
         const data = response?.data ?? response ?? {};
         const normalized = normalizePage({ id: data?.id ?? data?._id ?? currentForm.id ?? createLocalId(), ...payload, ...data });
         setPages((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
@@ -722,7 +730,7 @@ export default function AdminPages() {
     if (!confirm("Przenieść tę stronę do usuniętych?")) return;
     setDeletingId(id);
     try {
-      await apiFetch(`/admin/pages/${id}`, { method: "DELETE" });
+      await deletePage(id);
       applyPageUpdate(id, { deletedAt: Date.now() });
       toast.success("Strona przeniesiona do usuniętych");
       if (form?.id === id) resetEditorState();
@@ -738,7 +746,7 @@ export default function AdminPages() {
   const handleRestore = async (id: string) => {
     setRestoringId(id);
     try {
-      await apiFetch(`/admin/pages/${id}/restore`, { method: "PUT" });
+      await restorePage(id);
       applyPageUpdate(id, { deletedAt: null });
       toast.success("Strona przywrócona");
     } catch (error) {
@@ -754,7 +762,7 @@ export default function AdminPages() {
     if (!confirm("Zarchiwizować tę stronę? Nie będzie widoczna publicznie.")) return;
     setArchivingId(id);
     try {
-      await apiFetch(`/admin/pages/${id}/archive`, { method: "PUT" });
+      await archivePage(id);
       applyPageUpdate(id, { archivedAt: Date.now() });
       toast.success("Strona zarchiwizowana");
       if (form?.id === id) resetEditorState();
@@ -770,7 +778,7 @@ export default function AdminPages() {
   const handleUnarchive = async (id: string) => {
     setArchivingId(id);
     try {
-      await apiFetch(`/admin/pages/${id}/unarchive`, { method: "PUT" });
+      await unarchivePage(id);
       applyPageUpdate(id, { archivedAt: null });
       toast.success("Strona przywrócona z archiwum");
     } catch (error) {
@@ -785,7 +793,7 @@ export default function AdminPages() {
   const handleDuplicate = async (id: string) => {
     setDuplicatingId(id);
     try {
-      const response = await apiFetch<any>(`/admin/pages/${id}/duplicate`, { method: "POST" });
+      const response = await duplicatePage(id);
       const data = response?.data ?? response;
       const duplicated = normalizePage(data ?? {});
       if (duplicated._id) {
@@ -827,7 +835,7 @@ export default function AdminPages() {
   const handleSeed = async () => {
     setSeeding(true);
     try {
-      const response = await apiFetch<any>("/admin/pages/seed", { method: "POST" });
+      const response = await seedPages();
       const result = response?.data ?? response ?? {};
       if (result?.skipped) {
         toast.info("Strony demo już istnieją");
@@ -847,10 +855,7 @@ export default function AdminPages() {
     if (!window.confirm("Przywrócić tę wersję strony? Bieżący stan zostanie zapisany do historii.")) return;
     setRollbackingVersionId(versionId);
     try {
-      await apiFetch(`/admin/pages/${form.id}/rollback`, {
-        method: "POST",
-        body: { version_id: versionId },
-      });
+      await rollbackPage(form.id, versionId);
       toast.success("Przywrócono wybraną wersję");
       resetEditorState();
     } catch (error) {
@@ -867,10 +872,7 @@ export default function AdminPages() {
     if (!confirmation) return;
     setHardDeletingId(pageId);
     try {
-      await apiFetch(`/admin/pages/${pageId}/hard`, {
-        method: "DELETE",
-        body: { confirmation_slug: confirmation },
-      });
+      await hardDeletePage(pageId, confirmation);
       setPages((prev) => (prev ? removeById(prev, pageId) : prev));
       toast.success("Strona została usunięta trwale");
       if (form?.id === pageId) resetEditorState();

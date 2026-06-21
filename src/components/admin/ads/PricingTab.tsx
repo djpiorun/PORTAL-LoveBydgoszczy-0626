@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api-client";
+import { deleteAdsPricing, fetchAdsPricing, saveAdsPricing } from "@/lib/ads-api";
 
 const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -52,9 +52,9 @@ export function PricingTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/pricing");
+        const response = await fetchAdsPricing();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setPricing(data.map(normalizePricing));
       } catch (error) {
         console.warn("Ads pricing API unavailable", error);
@@ -94,18 +94,12 @@ export function PricingTab() {
     };
     try {
       if (editingId) {
-        const response = await apiFetch<any>(`/admin/ads/pricing/${editingId}`, {
-          method: "PUT",
-          body: payload,
-        });
+        const response = await saveAdsPricing(editingId, payload);
         const updated = normalizePricing(response?.data ?? response ?? { id: editingId, ...payload });
         setPricing((prev) => upsertById(prev, updated));
         toast.success("Zaktualizowano pozycję cennika");
       } else {
-        const response = await apiFetch<any>("/admin/ads/pricing", {
-          method: "POST",
-          body: payload,
-        });
+        const response = await saveAdsPricing(null, payload);
         const created = normalizePricing(response?.data ?? response ?? { id: createLocalId(), ...payload });
         setPricing((prev) => upsertById(prev, created));
         toast.success("Dodano nową pozycję cennika");
@@ -124,7 +118,7 @@ export function PricingTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć tę pozycję?")) return;
     try {
-      await apiFetch(`/admin/ads/pricing/${id}`, { method: "DELETE" });
+      await deleteAdsPricing(id);
       setPricing((prev) => removeById(prev, id));
       toast.success("Usunięto pozycję cennika");
     } catch (error) {

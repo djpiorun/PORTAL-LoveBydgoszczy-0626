@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Megaphone, Image as ImageIcon, Calendar, DollarSign, Users, MousePointer, Eye, TrendingUp, AlertTriangle } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsDashboardStats } from "@/lib/ads-api";
 
 function StatCard({ title, value, icon: Icon, color = "blue", sub }: { title: string; value: string | number; icon: any; color?: string; sub?: string }) {
   const colors: Record<string, string> = {
@@ -113,7 +113,7 @@ export function DashboardTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        const response = await fetchAdsDashboardStats();
         if (!active) return;
         setStats(normalizeStats(response));
       } catch (error) {

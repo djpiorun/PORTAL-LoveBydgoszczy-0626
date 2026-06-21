@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, FileText, Trash2, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { createAdsGraphic, deleteAdsGraphic, fetchAdsGraphics } from "@/lib/ads-api";
 import { apiFetch } from "@/lib/api-client";
 
 type GraphicAsset = {
@@ -47,9 +48,9 @@ export function GraphicsLibraryTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/graphics");
+        const response = await fetchAdsGraphics();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setGraphics(data.map(normalizeGraphic));
       } catch (error) {
         console.warn("Ads graphics API unavailable", error);
@@ -90,10 +91,7 @@ export function GraphicsLibraryTab() {
         created_at: asset?.created_at ?? new Date().toISOString(),
       };
 
-      const response = await apiFetch<any>("/admin/ads/graphics", {
-        method: "POST",
-        body: graphicPayload,
-      });
+      const response = await createAdsGraphic(graphicPayload);
       const created = normalizeGraphic(response?.data ?? response ?? { id: createLocalId(), ...graphicPayload });
       setGraphics((prev) => upsertById(prev, created));
       toast.success("Plik został wgrany");
@@ -118,7 +116,7 @@ export function GraphicsLibraryTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten plik?")) return;
     try {
-      await apiFetch(`/admin/ads/graphics/${id}`, { method: "DELETE" });
+      await deleteAdsGraphic(id);
       setGraphics((prev) => removeById(prev, id));
       toast.success("Plik usunięty");
     } catch (error) {

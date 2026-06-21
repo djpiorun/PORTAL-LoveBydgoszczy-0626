@@ -2,12 +2,17 @@
 
 use App\Http\Controllers\AdsAdminController;
 use App\Http\Controllers\AdsController;
+use App\Http\Controllers\AdminCategoriesController;
+use App\Http\Controllers\AdminCategoryEntitiesController;
+use App\Http\Controllers\AdminMenuItemsController;
+use App\Http\Controllers\AdminPagesController;
 use App\Http\Controllers\AdminSettingsController;
 use App\Http\Controllers\AdminUsersController;
 use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AuthorController;
 use App\Http\Controllers\CategoryHeroConfigController;
+use App\Http\Controllers\CategoryEntityController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GtfsController;
@@ -88,6 +93,9 @@ Route::get('politicians', [PoliticianController::class, 'index']);
 Route::get('politicians/{slug}', [PoliticianController::class, 'show']);
 Route::get('sport-teams/{slug}', [SportTeamController::class, 'show']);
 Route::get('pages/slug/{slug}', [PageController::class, 'showBySlug']);
+Route::get('category-entities/{categoryKey}/{entityType}', [CategoryEntityController::class, 'index']);
+Route::get('category-entities/{categoryKey}', [CategoryEntityController::class, 'index']);
+Route::get('category-entities', [CategoryEntityController::class, 'index']);
 Route::get('category-hero-config', [CategoryHeroConfigController::class, 'index']);
 Route::get('media', [MediaController::class, 'index']);
 Route::get('media/{mediaAsset}', [MediaController::class, 'show']);
@@ -162,6 +170,52 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('gtfs/metadata', [AdminSettingsController::class, 'gtfsMetadata']);
         Route::post('gtfs/update', [AdminSettingsController::class, 'gtfsUpdate']);
         Route::get('pages/slug/{slug}', [PageController::class, 'adminShowBySlug']);
+        Route::get('updates', [UpdateController::class, 'adminIndex']);
+        Route::post('updates', [UpdateController::class, 'store']);
+        Route::put('updates/{update}', [UpdateController::class, 'update']);
+        Route::delete('updates/{update}', [UpdateController::class, 'destroy']);
+    });
+
+    Route::prefix('admin/menu-items')->group(function () {
+        Route::get('/', [AdminMenuItemsController::class, 'index']);
+        Route::post('/', [AdminMenuItemsController::class, 'store']);
+        Route::post('seed', [AdminMenuItemsController::class, 'seed']);
+        Route::put('{menuItem}', [AdminMenuItemsController::class, 'update']);
+        Route::delete('{menuItem}', [AdminMenuItemsController::class, 'destroy']);
+    });
+
+    Route::prefix('admin/categories')->group(function () {
+        Route::get('/', [AdminCategoriesController::class, 'index']);
+        Route::post('/', [AdminCategoriesController::class, 'store']);
+        Route::put('{category}', [AdminCategoriesController::class, 'update']);
+        Route::delete('{category}', [AdminCategoriesController::class, 'destroy']);
+    });
+
+    Route::prefix('admin/category-entities')->group(function () {
+        Route::get('/', [AdminCategoryEntitiesController::class, 'index']);
+        Route::post('/', [AdminCategoryEntitiesController::class, 'store']);
+        Route::put('{entity}', [AdminCategoryEntitiesController::class, 'update']);
+        Route::delete('{entity}', [AdminCategoryEntitiesController::class, 'destroy']);
+    });
+
+    Route::prefix('admin/category-hero-config')->group(function () {
+        Route::get('{categoryKey}', [CategoryHeroConfigController::class, 'show']);
+        Route::put('{categoryKey}', [CategoryHeroConfigController::class, 'update']);
+    });
+
+    Route::prefix('admin/pages')->group(function () {
+        Route::get('/', [AdminPagesController::class, 'index']);
+        Route::post('/', [AdminPagesController::class, 'store']);
+        Route::post('seed', [AdminPagesController::class, 'seed']);
+        Route::get('{page}/versions', [AdminPagesController::class, 'versions']);
+        Route::post('{page}/rollback', [AdminPagesController::class, 'rollback']);
+        Route::post('{page}/duplicate', [AdminPagesController::class, 'duplicate']);
+        Route::put('{page}/restore', [AdminPagesController::class, 'restore']);
+        Route::put('{page}/archive', [AdminPagesController::class, 'archive']);
+        Route::put('{page}/unarchive', [AdminPagesController::class, 'unarchive']);
+        Route::delete('{page}/hard', [AdminPagesController::class, 'hardDelete']);
+        Route::put('{page}', [AdminPagesController::class, 'update']);
+        Route::delete('{page}', [AdminPagesController::class, 'destroy']);
     });
     Route::prefix('admin/users')->group(function () {
         Route::get('/', [AdminUsersController::class, 'index']);

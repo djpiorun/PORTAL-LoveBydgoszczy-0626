@@ -8,6 +8,7 @@ import { useNavigate, Link } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
 import { apiFetch } from "@/lib/api-client";
+import { fetchPoliticians } from "@/lib/politicians-api";
 import { fetchArticles, type Article } from "@/lib/articles-api";
 import { toast } from "sonner";
 
@@ -140,6 +141,36 @@ function PoliticianCover({ politician }: { politician: any }) {
   );
 }
 
+const normalizeHeroConfig = (payload: any) => {
+  const data = payload?.data ?? payload?.items ?? payload ?? [];
+  return Array.isArray(data)
+    ? data.map((item) => ({
+        itemId: item?.itemId ?? item?.item_id ?? item?.item ?? "",
+        order: item?.order ?? 0,
+        isVisible: item?.isVisible ?? item?.is_visible ?? true,
+      }))
+    : [];
+};
+
+const normalizePolitician = (politician: any) => ({
+  _id: String(politician?.id ?? politician?._id ?? ""),
+  slug: politician?.slug ?? "",
+  fullName: politician?.fullName ?? politician?.full_name ?? "",
+  photo: politician?.photo ?? politician?.photo_url ?? null,
+  party: politician?.party ?? null,
+  position: politician?.position ?? null,
+  facebookUrl: politician?.facebookUrl ?? politician?.facebook_url ?? null,
+  twitterUrl: politician?.twitterUrl ?? politician?.twitter_url ?? null,
+  websiteUrl: politician?.websiteUrl ?? politician?.website_url ?? null,
+  bio: politician?.bio ?? null,
+  isActive: politician?.isActive ?? politician?.is_active ?? true,
+});
+
+const normalizePoliticiansPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizePolitician) : [];
+};
+
 export default function PoliticsPage() {
   const nav = useNavigate();
   const [articles, setArticles] = useState<Article[]>([]);
@@ -155,19 +186,12 @@ export default function PoliticsPage() {
 
   useEffect(() => {
     let isMounted = true;
-    const normalizeList = (payload: any) => {
-      if (Array.isArray(payload)) return payload;
-      if (Array.isArray(payload?.data)) return payload.data;
-      if (Array.isArray(payload?.results)) return payload.results;
-      return [];
-    };
-
     const load = async () => {
       setIsLoading(true);
       const [articlesResult, politiciansResult, heroResult] = await Promise.allSettled([
         fetchArticles({ category: "polityka", limit: 50 }),
-        apiFetch("/politicians"),
-        apiFetch("/category-hero-config?category_key=polityka"),
+        fetchPoliticians(),
+        apiFetch("/category-hero-config?category=polityka"),
       ]);
 
       if (!isMounted) return;
@@ -180,14 +204,14 @@ export default function PoliticsPage() {
       }
 
       if (politiciansResult.status === "fulfilled") {
-        setAllPoliticians(normalizeList(politiciansResult.value));
+        setAllPoliticians(normalizePoliticiansPayload(politiciansResult.value));
       } else {
         setAllPoliticians([]);
         toast.error("Nie udało się pobrać listy polityków.");
       }
 
       if (heroResult.status === "fulfilled") {
-        setHeroConfig(normalizeList(heroResult.value));
+        setHeroConfig(normalizeHeroConfig(heroResult.value));
       } else {
         setHeroConfig([]);
         toast.error("Nie udało się pobrać konfiguracji hero polityki.");

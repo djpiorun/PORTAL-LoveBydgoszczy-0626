@@ -12,6 +12,8 @@ import StoryViewer from "@/components/StoryViewer";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
 import { apiFetch } from "@/lib/api-client";
+import { fetchEvents } from "@/lib/events-api";
+import { fetchUpdates } from "@/lib/updates-api";
 import { fetchArticles } from "@/lib/articles-api";
 import { toast } from "sonner";
 
@@ -1159,8 +1161,8 @@ export default function MobileLanding() {
     const loadData = async () => {
       const [articlesResult, updatesResult, eventsResult, authorsResult] = await Promise.allSettled([
         fetchArticles({ limit: 30 }),
-        apiFetch("/updates?limit=8"),
-        apiFetch("/events?limit=8"),
+        fetchUpdates({ limit: 8 }),
+        fetchEvents({ limit: 8 }),
         apiFetch("/authors"),
       ]);
 

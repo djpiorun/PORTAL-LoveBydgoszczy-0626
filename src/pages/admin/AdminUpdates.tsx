@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api-client";
+import { createAdminUpdate, deleteAdminUpdate, fetchAdminUpdates, updateAdminUpdate } from "@/lib/updates-api";
 import { Plus, Trash2, Edit2, MapPin, Link2, X, Check, Zap, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -350,8 +350,8 @@ export default function AdminUpdates() {
     let active = true;
     const loadUpdates = async () => {
       try {
-        const response = await apiFetch<any>("/admin/updates");
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const response = await fetchAdminUpdates();
+        const data = Array.isArray(response) ? response : response ?? [];
         if (!active) return;
         setUpdates(data.map(normalizeUpdate));
       } catch (error) {
@@ -380,10 +380,7 @@ export default function AdminUpdates() {
       published_at: form.publishedAt ? new Date(form.publishedAt).getTime() : Date.now(),
     };
     try {
-      const response = await apiFetch<any>("/admin/updates", {
-        method: "POST",
-        body: payload,
-      });
+      const response = await createAdminUpdate(payload);
       const data = response?.data ?? response ?? {};
       const normalized = normalizeUpdate({ id: data?.id ?? data?._id ?? createLocalId(), ...payload, ...data });
       setUpdates((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
@@ -391,10 +388,7 @@ export default function AdminUpdates() {
       setMode("list");
     } catch (err: any) {
       console.warn("Admin update create failed", err);
-      const fallback = normalizeUpdate({ id: createLocalId(), ...payload });
-      setUpdates((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
-      toast.success("Zapisano lokalnie (brak API aktualizacji)");
-      setMode("list");
+      toast.error("Nie udało się zapisać aktualizacji.");
     } finally {
       setIsSubmitting(false);
     }
@@ -415,10 +409,7 @@ export default function AdminUpdates() {
       published_at: form.publishedAt ? new Date(form.publishedAt).getTime() : null,
     };
     try {
-      const response = await apiFetch<any>(`/admin/updates/${editingId}`, {
-        method: "PUT",
-        body: payload,
-      });
+      const response = await updateAdminUpdate(editingId, payload);
       const data = response?.data ?? response ?? {};
       const normalized = normalizeUpdate({ id: data?.id ?? data?._id ?? editingId, ...payload, ...data });
       setUpdates((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
@@ -427,11 +418,7 @@ export default function AdminUpdates() {
       setEditingId(null);
     } catch (err: any) {
       console.warn("Admin update edit failed", err);
-      const fallback = normalizeUpdate({ id: editingId, ...payload });
-      setUpdates((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
-      toast.success("Zapisano lokalnie (brak API aktualizacji)");
-      setMode("list");
-      setEditingId(null);
+      toast.error("Nie udało się zapisać aktualizacji.");
     } finally {
       setIsSubmitting(false);
     }
@@ -439,13 +426,12 @@ export default function AdminUpdates() {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiFetch(`/admin/updates/${id}`, { method: "DELETE" });
+      await deleteAdminUpdate(id);
       setUpdates((prev) => (prev ? removeById(prev, id) : prev));
       toast.success("Aktualizacja usunięta");
     } catch (err: any) {
       console.warn("Admin update delete failed", err);
-      setUpdates((prev) => (prev ? removeById(prev, id) : prev));
-      toast.success("Usunięto lokalnie (brak API aktualizacji)");
+      toast.error("Nie udało się usunąć aktualizacji.");
     }
   };
 

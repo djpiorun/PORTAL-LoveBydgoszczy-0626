@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import Comments from "@/components/Comments";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { apiFetch } from "@/lib/api-client";
+import { fetchReels, likeReel } from "@/lib/reels-api";
 import { toast } from "sonner";
 
 const categories = [
@@ -235,7 +235,7 @@ export default function ReelsPage() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const payload = await apiFetch(`/reels?category=${activeCategory}&limit=20`);
+        const payload = await fetchReels({ category: activeCategory, limit: 20 });
         if (!isMounted) return;
         setReels(normalizeList(payload));
       } catch (error) {
@@ -342,10 +342,7 @@ export default function ReelsPage() {
     setLiked(next);
     localStorage.setItem("reels_liked", JSON.stringify(next));
     try {
-      await apiFetch(`/reels/${id}/like`, {
-        method: "POST",
-        body: { is_liked: !was },
-      });
+      await likeReel(id, { is_liked: !was });
     } catch (error) {
       const fallback = { ...liked, [id]: was };
       setLiked(fallback);

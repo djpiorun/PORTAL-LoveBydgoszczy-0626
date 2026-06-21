@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Clock, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsCampaigns } from "@/lib/ads-api";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   active: { label: "W trakcie", color: "bg-green-100 text-green-700 border-green-200" },
@@ -38,9 +38,9 @@ export function ReservationsTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/campaigns");
+        const response = await fetchAdsCampaigns();
         if (!active) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setCampaigns(data.map(normalizeCampaign));
       } catch (error) {
         console.warn("Ads campaigns API unavailable", error);

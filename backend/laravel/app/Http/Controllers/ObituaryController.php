@@ -21,8 +21,17 @@ class ObituaryController extends Controller
             $query->where('type', $request->string('type'));
         }
 
+        $perPage = $request->integer('per_page', 12);
+        $paginated = $query->paginate($perPage);
+
         return response()->json([
-            'data' => $query->get(),
+            'data' => $paginated->items(),
+            'meta' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
+            ],
         ]);
     }
 

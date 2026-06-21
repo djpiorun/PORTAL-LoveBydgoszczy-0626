@@ -21,7 +21,7 @@ import MobileLanding from "@/components/mobile/MobileLanding";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getArticleHref } from "@/lib/articleRouting";
-import { apiFetch } from "@/lib/api-client";
+import { fetchUpdates, normalizeUpdatesPayload } from "@/lib/updates-api";
 import { fetchArticles, type Article } from "@/lib/articles-api";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
 import { toast } from "sonner";
@@ -101,10 +101,9 @@ function HomepageUpdatesStrip() {
     const loadUpdates = async () => {
       setIsLoading(true);
       try {
-        const payload = await apiFetch<any>("/updates?limit=5");
+        const payload = await fetchUpdates({ limit: 5 });
         if (!isMounted) return;
-        const data = payload?.data ?? payload?.updates ?? payload ?? [];
-        setUpdates(Array.isArray(data) ? data : []);
+        setUpdates(normalizeUpdatesPayload(payload));
       } catch (error) {
         if (!isMounted) return;
         setUpdates([]);

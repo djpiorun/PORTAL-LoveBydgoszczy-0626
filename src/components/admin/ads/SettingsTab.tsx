@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Loader2, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsSettings, updateAdsSettings } from "@/lib/ads-api";
 
 const DEFAULT_FORM = {
   isModuleEnabled: true,
@@ -38,7 +38,7 @@ export function SettingsTab() {
     let active = true;
     const load = async () => {
       try {
-        const response = await apiFetch<any>("/admin/ads/settings");
+        const response = await fetchAdsSettings();
         if (!active) return;
         setFormData(normalizeSettings(response));
       } catch (error) {
@@ -56,16 +56,13 @@ export function SettingsTab() {
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      await apiFetch("/admin/ads/settings", {
-        method: "PUT",
-        body: {
-          is_module_enabled: formData.isModuleEnabled,
-          auto_rotation: formData.autoRotation,
-          notification_email: formData.notificationEmail,
-          default_ad_sizes: formData.defaultAdSizes,
-          ad_types: formData.adTypes,
-          max_emissions_per_day: formData.maxEmissionsPerDay,
-        },
+      await updateAdsSettings({
+        is_module_enabled: formData.isModuleEnabled,
+        auto_rotation: formData.autoRotation,
+        notification_email: formData.notificationEmail,
+        default_ad_sizes: formData.defaultAdSizes,
+        ad_types: formData.adTypes,
+        max_emissions_per_day: formData.maxEmissionsPerDay,
       });
       toast.success("Ustawienia zapisane");
     } catch (error) {

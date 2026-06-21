@@ -3,7 +3,8 @@ import { Link } from "react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fetchArticles, type Article } from "@/lib/articles-api";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdminComments } from "@/lib/comments-api";
+import { fetchEvents } from "@/lib/events-api";
 
 type AdminComment = {
   id: string;
@@ -57,10 +58,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isMounted = true;
     setEventsLoading(true);
-    apiFetch<any>("/events")
+    fetchEvents()
       .then((response) => {
         if (!isMounted) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         setEvents(data);
       })
       .catch(() => {
@@ -79,10 +80,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isMounted = true;
     setCommentsLoading(true);
-    apiFetch<any>("/comments/admin")
+    fetchAdminComments()
       .then((response) => {
         if (!isMounted) return;
-        const data = Array.isArray(response) ? response : response?.data ?? [];
+        const data = Array.isArray(response) ? response : response ?? [];
         const items = data.map(normalizeComment);
         setComments(items);
       })

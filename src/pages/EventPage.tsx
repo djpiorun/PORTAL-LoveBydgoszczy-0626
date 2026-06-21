@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import SEO from "@/components/SEO";
 import { motion } from "framer-motion";
 import { Calendar, MapPin, Clock, User, ArrowLeft, Share2, Heart, Ticket, Info } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchEventById } from "@/lib/events-api";
 import { toast } from "sonner";
 
 const categoryColors: Record<string, string> = {
@@ -67,7 +67,7 @@ export default function EventPage() {
     let active = true;
     setIsLoading(true);
 
-    apiFetch(`/events/${id}`)
+    fetchEventById(id)
       .then((payload) => {
         if (!active) return;
         const normalized = normalizeEventPayload(payload);

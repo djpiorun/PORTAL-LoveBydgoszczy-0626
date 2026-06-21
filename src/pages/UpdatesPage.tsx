@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api-client";
+import { fetchUpdates, normalizeUpdatesPayload } from "@/lib/updates-api";
 import { toast } from "sonner";
 import { Zap, MapPin, Link2, ArrowLeft, Filter, ChevronDown } from "lucide-react";
 import { Link } from "react-router";
@@ -92,10 +92,13 @@ function useUpdatesFeed(activeCategory: string | null, pageSize: number) {
         per_page: String(pageSize),
       });
       if (activeCategory) params.set("category", activeCategory);
-      const payload = await apiFetch<any>(`/updates?${params.toString()}`);
+      const payload = await fetchUpdates({
+        page: pageToLoad,
+        per_page: pageSize,
+        ...(activeCategory ? { category: activeCategory } : {}),
+      });
       if (!isMountedRef.current) return;
-      const data = payload?.data ?? payload?.updates ?? payload ?? [];
-      const nextUpdates = Array.isArray(data) ? data : [];
+      const nextUpdates = normalizeUpdatesPayload(payload);
       const hasMore = payload?.meta?.current_page && payload?.meta?.last_page
         ? payload.meta.current_page < payload.meta.last_page
         : nextUpdates.length === pageSize;

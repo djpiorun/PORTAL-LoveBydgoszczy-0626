@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import EventCard from "@/components/EventCard";
 import { Music, Calendar } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchEvents } from "@/lib/events-api";
 import { toast } from "sonner";
 
 type EventFilter = "all" | "today" | "weekend" | "free";
@@ -33,7 +33,7 @@ export default function EventsSection() {
     let active = true;
     const loadEvents = async () => {
       try {
-        const payload = await apiFetch("/events?limit=6");
+        const payload = await fetchEvents({ limit: 6 });
         if (!active) return;
         setEvents(normalizeEventsPayload(payload));
       } catch (error) {

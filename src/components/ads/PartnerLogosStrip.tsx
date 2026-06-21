@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAdsPartners } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 interface PartnerLogosStripProps {
@@ -28,7 +28,7 @@ export default function PartnerLogosStrip({ title = "Partnerzy portalu", classNa
     let active = true;
     const loadPartners = async () => {
       try {
-        const payload = await apiFetch(`/ads/partners?limit=${maxItems}`);
+        const payload = await fetchAdsPartners({ limit: maxItems });
         if (!active) return;
         setPartners(normalizePartnersPayload(payload));
       } catch (error) {

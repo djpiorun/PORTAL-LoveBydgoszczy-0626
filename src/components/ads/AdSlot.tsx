@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { fetchAds, trackAdClick, trackAdImpression } from "@/lib/ads-api";
 import { toast } from "sonner";
 
 interface AdSlotProps {
@@ -144,10 +144,7 @@ export default function AdSlot({ placement, className = "", fallback }: AdSlotPr
   const trackImpression = useCallback(async (creativeId: string) => {
     if (!creativeId) return;
     try {
-      await apiFetch("/ads/track-impression", {
-        method: "POST",
-        body: { creative_id: creativeId },
-      });
+      await trackAdImpression({ creative_id: creativeId });
     } catch (error) {
       console.warn("Ads impression tracking unavailable", error);
     }
@@ -156,10 +153,7 @@ export default function AdSlot({ placement, className = "", fallback }: AdSlotPr
   const trackClick = useCallback(async (creativeId: string) => {
     if (!creativeId) return;
     try {
-      await apiFetch("/ads/track-click", {
-        method: "POST",
-        body: { creative_id: creativeId },
-      });
+      await trackAdClick({ creative_id: creativeId });
     } catch (error) {
       console.warn("Ads click tracking unavailable", error);
     }
@@ -169,7 +163,7 @@ export default function AdSlot({ placement, className = "", fallback }: AdSlotPr
     let active = true;
     const loadAds = async () => {
       try {
-        const payload = await apiFetch(`/ads?placement=${encodeURIComponent(placement)}`);
+        const payload = await fetchAds({ placement });
         if (!active) return;
         setAds(normalizeAdsPayload(payload));
       } catch (error) {
