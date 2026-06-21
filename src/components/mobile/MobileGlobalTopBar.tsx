@@ -1,12 +1,11 @@
 import { CloudSun, Search, ArrowUpRight, Clock3, X, Sun, Moon, Home, TramFront, Heart, Zap, Users, Building2, Flame, HeartPulse, Music, Palette, TrendingUp } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { fetchBydgoszczWeather, toWeatherSummary } from "@/lib/weather";
 import type { WeatherSummary } from "@/lib/weather";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion, AnimatePresence } from "framer-motion";
+import { fetchArticles, type Article } from "@/lib/articles-api";
 import { getArticleHref } from "@/lib/articleRouting";
 
 // ─── Date Chip ────────────────────────────────────────────────────────────────
@@ -130,6 +129,7 @@ export function SearchOverlay({ open, onClose }: { open: boolean; onClose: () =>
   const navigate = useNavigate();
   const [value, setValue] = useState("");
   const [history, setHistory] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Article[]>([]);
 
   useEffect(() => {
     if (!open) { setValue(""); return; }
@@ -137,10 +137,30 @@ export function SearchOverlay({ open, onClose }: { open: boolean; onClose: () =>
   }, [open]);
 
   const normalized = value.trim();
-  const suggestions = useQuery(
-    api.articles.search,
-    open && normalized.length >= 2 ? { query: normalized } : "skip",
-  );
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!open || normalized.length < 2) {
+      setSuggestions([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    fetchArticles({ search: normalized, limit: 10 })
+      .then((articles) => {
+        if (!isMounted) return;
+        setSuggestions(articles);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setSuggestions([]);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open, normalized]);
 
   const saveHistory = (query: string) => {
     const next = [query, ...history.filter(i => i !== query)].slice(0, 6);
@@ -148,7 +168,7 @@ export function SearchOverlay({ open, onClose }: { open: boolean; onClose: () =>
     localStorage.setItem("searchHistory", JSON.stringify(next));
   };
 
-  const openResult = (article?: { slug?: string; _id: string; title: string }) => {
+  const openResult = (article?: Pick<Article, "slug" | "id" | "title">) => {
     if (!article) return;
     navigate(getArticleHref(article));
     onClose();
@@ -173,10 +193,10 @@ export function SearchOverlay({ open, onClose }: { open: boolean; onClose: () =>
   const items = useMemo(() => {
     if (normalized.length >= 2 && suggestions) {
       return suggestions.slice(0, 6).map(a => ({
-        key: a._id,
+        key: a.id,
         title: a.title,
         subtitle: a.author || "Artykuł",
-        onClick: () => openResult(a as any),
+        onClick: () => openResult(a),
         isHistory: false,
       }));
     }

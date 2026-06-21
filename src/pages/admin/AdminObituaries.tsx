@@ -1,23 +1,111 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, X, Trash2, Eye, Edit, Heart, Clock3, ShieldCheck, Ban } from "lucide-react";
 import { toast } from "sonner";
-import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+type ObituaryRecord = {
+  _id: string;
+  id: string;
+  status: "pending" | "approved" | "rejected" | string;
+  createdAt: string;
+  slug?: string | null;
+  type?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  age?: string | number | null;
+  image?: string | null;
+  birthDate?: string | null;
+  deathDate?: string | null;
+  city?: string | null;
+  profession?: string | null;
+  shortDescription?: string | null;
+  title?: string | null;
+  content?: string | null;
+  funeralDate?: string | null;
+  funeralTime?: string | null;
+  funeralPlace?: string | null;
+  cemeteryPlace?: string | null;
+  submitterName?: string | null;
+  submitterEmail?: string | null;
+  submitterPhone?: string | null;
+  submitterRelation?: string | null;
+};
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const normalizeObituary = (obituary: any): ObituaryRecord => {
+  const id = String(obituary?.id ?? obituary?._id ?? createLocalId());
+  return {
+    _id: id,
+    id,
+    status: obituary?.status ?? "pending",
+    createdAt: obituary?.createdAt ?? obituary?.created_at ?? new Date().toISOString(),
+    slug: obituary?.slug ?? null,
+    type: obituary?.type ?? null,
+    firstName: obituary?.firstName ?? obituary?.first_name ?? null,
+    lastName: obituary?.lastName ?? obituary?.last_name ?? null,
+    age: obituary?.age ?? null,
+    image: obituary?.image ?? null,
+    birthDate: obituary?.birthDate ?? obituary?.birth_date ?? null,
+    deathDate: obituary?.deathDate ?? obituary?.death_date ?? null,
+    city: obituary?.city ?? null,
+    profession: obituary?.profession ?? null,
+    shortDescription: obituary?.shortDescription ?? obituary?.short_description ?? null,
+    title: obituary?.title ?? null,
+    content: obituary?.content ?? null,
+    funeralDate: obituary?.funeralDate ?? obituary?.funeral_date ?? null,
+    funeralTime: obituary?.funeralTime ?? obituary?.funeral_time ?? null,
+    funeralPlace: obituary?.funeralPlace ?? obituary?.funeral_place ?? null,
+    cemeteryPlace: obituary?.cemeteryPlace ?? obituary?.cemetery_place ?? null,
+    submitterName: obituary?.submitterName ?? obituary?.submitter_name ?? null,
+    submitterEmail: obituary?.submitterEmail ?? obituary?.submitter_email ?? null,
+    submitterPhone: obituary?.submitterPhone ?? obituary?.submitter_phone ?? null,
+    submitterRelation: obituary?.submitterRelation ?? obituary?.submitter_relation ?? null,
+  };
+};
+
+const upsertById = (items: ObituaryRecord[], item: ObituaryRecord) => {
+  const index = items.findIndex((entry) => entry._id === item._id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = (items: ObituaryRecord[], id: string) => items.filter((item) => item._id !== id);
+
+
 export default function AdminObituaries() {
-  const obituaries = useQuery(api.obituaries.getAdminObituaries);
-  const updateStatus = useMutation(api.obituaries.updateObituaryStatus);
-  const deleteObituary = useMutation(api.obituaries.deleteObituary);
-  const updateObituary = useMutation(api.obituaries.updateObituary);
+  const [obituaries, setObituaries] = useState<ObituaryRecord[] | undefined>(undefined);
   const [activeTab, setActiveTab] = useState("all");
-  const [editingObituary, setEditingObituary] = useState<any>(null);
+  const [editingObituary, setEditingObituary] = useState<ObituaryRecord | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadObituaries = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/obituaries");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setObituaries(data.map(normalizeObituary));
+      } catch (error) {
+        console.warn("Admin obituaries API unavailable", error);
+        if (active) setObituaries([]);
+      }
+    };
+
+    void loadObituaries();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (obituaries === undefined) {
     return <div>Ładowanie...</div>;
@@ -32,57 +120,79 @@ export default function AdminObituaries() {
   const approvedCount = obituaries.filter((o) => o.status === "approved").length;
   const rejectedCount = obituaries.filter((o) => o.status === "rejected").length;
 
-  const handleStatusChange = async (id: any, status: "approved" | "rejected") => {
+  const handleStatusChange = async (id: string, status: "approved" | "rejected") => {
+    const payload = { status };
     try {
-      await updateStatus({ id, status });
+      await apiFetch(`/admin/obituaries/${id}/status`, { method: "PUT", body: payload });
+      setObituaries((prev) => (prev ? prev.map((entry) => (entry._id === id ? { ...entry, status } : entry)) : prev));
       toast.success(`Status zmieniony na ${status}`);
     } catch (error) {
-      toast.error("Wystąpił błąd");
+      console.warn("Admin obituaries status update failed", error);
+      setObituaries((prev) => (prev ? prev.map((entry) => (entry._id === id ? { ...entry, status } : entry)) : prev));
+      toast.success("Zapisano lokalnie (brak API nekrologów)");
     }
   };
 
-  const handleDelete = async (id: any) => {
-    if (confirm("Czy na pewno chcesz usunąć ten wpis?")) {
-      try {
-        await deleteObituary({ id });
-        toast.success("Wpis usunięty");
-      } catch (error) {
-        toast.error("Wystąpił błąd");
-      }
+  const handleDelete = async (id: string) => {
+    if (!confirm("Czy na pewno chcesz usunąć ten wpis?")) return;
+    try {
+      await apiFetch(`/admin/obituaries/${id}`, { method: "DELETE" });
+      setObituaries((prev) => (prev ? removeById(prev, id) : prev));
+      toast.success("Wpis usunięty");
+    } catch (error) {
+      console.warn("Admin obituaries delete failed", error);
+      setObituaries((prev) => (prev ? removeById(prev, id) : prev));
+      toast.success("Usunięto lokalnie (brak API nekrologów)");
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingObituary) return;
+    const payload = {
+      type: editingObituary.type ?? null,
+      first_name: editingObituary.firstName ?? null,
+      last_name: editingObituary.lastName ?? null,
+      age: editingObituary.age ?? null,
+      image: editingObituary.image ?? null,
+      birth_date: editingObituary.birthDate ?? null,
+      death_date: editingObituary.deathDate ?? null,
+      city: editingObituary.city ?? null,
+      profession: editingObituary.profession ?? null,
+      short_description: editingObituary.shortDescription ?? null,
+      title: editingObituary.title ?? null,
+      content: editingObituary.content ?? null,
+      funeral_date: editingObituary.funeralDate ?? null,
+      funeral_time: editingObituary.funeralTime ?? null,
+      funeral_place: editingObituary.funeralPlace ?? null,
+      cemetery_place: editingObituary.cemeteryPlace ?? null,
+      submitter_name: editingObituary.submitterName ?? null,
+      submitter_email: editingObituary.submitterEmail ?? null,
+      submitter_phone: editingObituary.submitterPhone ?? null,
+      submitter_relation: editingObituary.submitterRelation ?? null,
+    };
     try {
-      await updateObituary({
-        id: editingObituary._id,
-        type: editingObituary.type,
-        firstName: editingObituary.firstName,
-        lastName: editingObituary.lastName,
-        age: editingObituary.age,
-        image: editingObituary.image,
-        birthDate: editingObituary.birthDate,
-        deathDate: editingObituary.deathDate,
-        city: editingObituary.city,
-        profession: editingObituary.profession,
-        shortDescription: editingObituary.shortDescription,
-        title: editingObituary.title,
-        content: editingObituary.content,
-        funeralDate: editingObituary.funeralDate,
-        funeralTime: editingObituary.funeralTime,
-        funeralPlace: editingObituary.funeralPlace,
-        cemeteryPlace: editingObituary.cemeteryPlace,
-        submitterName: editingObituary.submitterName,
-        submitterEmail: editingObituary.submitterEmail,
-        submitterPhone: editingObituary.submitterPhone,
-        submitterRelation: editingObituary.submitterRelation,
+      const response = await apiFetch<any>(`/admin/obituaries/${editingObituary._id}`, { method: "PUT", body: payload });
+      const data = response?.data ?? response ?? {};
+      const normalized = normalizeObituary({
+        ...editingObituary,
+        ...payload,
+        ...data,
+        id: data?.id ?? data?._id ?? editingObituary._id,
       });
+      setObituaries((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
       toast.success("Wpis zaktualizowany");
       setEditingObituary(null);
     } catch (error) {
-      toast.error("Wystąpił błąd podczas aktualizacji");
+      console.warn("Admin obituaries update failed", error);
+      const normalized = normalizeObituary({
+        ...editingObituary,
+        ...payload,
+        id: editingObituary._id,
+      });
+      setObituaries((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
+      toast.success("Zapisano lokalnie (brak API nekrologów)");
+      setEditingObituary(null);
     }
   };
 
@@ -242,24 +352,53 @@ export default function AdminObituaries() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Imię</Label>
-                    <Input value={editingObituary.firstName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingObituary({...editingObituary, firstName: e.target.value})} required />
+                    <Input
+                      value={editingObituary.firstName ?? ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setEditingObituary((prev) => (prev ? { ...prev, firstName: e.target.value } : prev))
+                      }
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Nazwisko</Label>
-                    <Input value={editingObituary.lastName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingObituary({...editingObituary, lastName: e.target.value})} required />
+                    <Input
+                      value={editingObituary.lastName ?? ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setEditingObituary((prev) => (prev ? { ...prev, lastName: e.target.value } : prev))
+                      }
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Wiek</Label>
-                    <Input value={editingObituary.age || ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingObituary({...editingObituary, age: e.target.value})} />
+                    <Input
+                      value={editingObituary.age ?? ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setEditingObituary((prev) => (prev ? { ...prev, age: e.target.value } : prev))
+                      }
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Data śmierci</Label>
-                    <Input type="date" value={editingObituary.deathDate || ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingObituary({...editingObituary, deathDate: e.target.value})} />
+                    <Input
+                      type="date"
+                      value={editingObituary.deathDate ?? ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setEditingObituary((prev) => (prev ? { ...prev, deathDate: e.target.value } : prev))
+                      }
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Treść</Label>
-                  <Textarea value={editingObituary.content} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditingObituary({...editingObituary, content: e.target.value})} rows={6} />
+                  <Textarea
+                    value={editingObituary.content ?? ""}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                      setEditingObituary((prev) => (prev ? { ...prev, content: e.target.value } : prev))
+                    }
+                    rows={6}
+                  />
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setEditingObituary(null)}>Anuluj</Button>

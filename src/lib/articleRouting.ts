@@ -12,7 +12,7 @@ export function getArticleSlug(article: { slug?: string | null; title: string })
   return article.slug?.trim() || buildArticleSlug(article.title);
 }
 
-export function getArticleHref(article: { _id: string; slug?: string | null; title: string }) {
+export function getArticleHref(article: { id?: string; _id?: string; slug?: string | null; title: string }) {
   return `/${getArticleSlug(article)}`;
 }
 

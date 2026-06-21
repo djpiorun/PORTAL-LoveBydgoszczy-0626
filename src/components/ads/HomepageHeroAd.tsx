@@ -1,16 +1,72 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
+
+const normalizeCreative = (creative: any) => ({
+  _id: String(creative?.id ?? creative?._id ?? ""),
+  name: creative?.name ?? "",
+  content: creative?.content ?? creative?.html ?? null,
+  desktopImageUrl: creative?.desktopImageUrl ?? creative?.desktop_image_url ?? creative?.image_url ?? creative?.imageUrl ?? null,
+  mobileImageUrl: creative?.mobileImageUrl ?? creative?.mobile_image_url ?? null,
+  targetUrl: creative?.targetUrl ?? creative?.target_url ?? null,
+});
+
+const normalizeAdsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.ads ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeCreative) : [];
+};
 
 export default function HomepageHeroAd() {
-  const ads = useQuery(api.ads.getAdsByPlacement, { placementSystemName: "home_top_banner" });
-  const trackImpression = useMutation(api.ads.trackImpression);
-  const trackClick = useMutation(api.ads.trackClick);
+  const [ads, setAds] = useState<any[] | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [impressed, setImpressed] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+
+  const trackImpression = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-impression", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads impression tracking unavailable", error);
+    }
+  }, []);
+
+  const trackClick = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-click", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads click tracking unavailable", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadAds = async () => {
+      try {
+        const payload = await apiFetch("/ads?placement=home_top_banner");
+        if (!active) return;
+        setAds(normalizeAdsPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setAds([]);
+        toast.warning("Reklamy są chwilowo niedostępne.");
+      }
+    };
+
+    loadAds();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!ref.current || impressed || !ads || ads.length === 0) return;
@@ -18,7 +74,7 @@ export default function HomepageHeroAd() {
       ([entry]) => {
         if (entry.isIntersecting && !impressed) {
           setImpressed(true);
-          trackImpression({ creativeId: ads[0]._id });
+          trackImpression(ads[0]._id);
         }
       },
       { threshold: 0.5 }
@@ -27,7 +83,7 @@ export default function HomepageHeroAd() {
     return () => observer.disconnect();
   }, [impressed, ads, trackImpression]);
 
-  if (ads === undefined) {
+  if (ads === null) {
     return (
       <section className="relative z-20 overflow-visible px-4 pt-24 pb-1 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl h-2" />
@@ -62,7 +118,7 @@ export default function HomepageHeroAd() {
         <div
           className="flex min-w-0 flex-1 cursor-pointer items-center justify-center overflow-hidden rounded-2xl bg-slate-50/80 px-2 py-1 dark:bg-slate-900/70"
           onClick={() => {
-            trackClick({ creativeId: ad._id });
+            trackClick(ad._id);
             if (ad.targetUrl) window.open(ad.targetUrl, "_blank", "noopener,noreferrer");
           }}
         >

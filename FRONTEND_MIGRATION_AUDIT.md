@@ -1,0 +1,208 @@
+# Frontend Migration Audit (Convex → Laravel)
+
+## Convex functions currently used by React
+- ads.getAdsByPlacement
+- ads.trackClick
+- ads.trackImpression
+- articles.get
+- articles.getAll
+- articles.getByAuthor
+- articles.getBySlug
+- articles.getFeatured
+- articles.getFileUrl
+- articles.getForSitemap
+- articles.getLatest
+- articles.getPatronages
+- articles.getPollResults
+- articles.list
+- articles.listPaginated
+- articles.remove
+- articles.search
+- articles.submitPollVote
+- events.create
+- events.generateUploadUrl
+- events.get
+- events.getAll
+- events.getFileUrl
+- events.getUpcoming
+- events.list
+- events.remove
+- events.search
+- events.update
+- gtfs.getActiveServices
+- gtfs.getRouteDetails
+- gtfs.getRoutes
+- gtfs.getStop
+- gtfs.getStopDepartures
+- gtfs.searchStops
+- investments.get
+- investments.list
+- investments.remove
+- investments.save
+- investments.seedInvestments
+- matchResults.recent
+- media.createUploadUrl
+- mediaLibrary.saveAsset
+- menuItems.getNavData
+- menuItems.list
+- menuItems.remove
+- menuItems.seedDefault
+- menuItems.upsert
+- newsletter.subscribe
+- obituaries.deleteObituary
+- obituaries.getAdminObituaries
+- obituaries.getObituaries
+- obituaries.getObituaryBySlug
+- obituaries.submitObituary
+- obituaries.updateObituary
+- obituaries.updateObituaryStatus
+- pages.archive
+- pages.duplicate
+- pages.getAdminPreviewBySlug
+- pages.getBySlug
+- pages.hardRemove
+- pages.listForAdmin
+- pages.listVersions
+- pages.remove
+- pages.restore
+- pages.rollbackToVersion
+- pages.seedDemo
+- pages.unarchive
+- pages.upsert
+- politicians.get
+- politicians.list
+- politicians.remove
+- politicians.save
+- politicians.seedPoliticians
+- reels.create
+- reels.list
+- reels.listActive
+- reels.listAll
+- reels.listForStories
+- reels.remove
+- reels.seed
+- reels.toggleLike
+- reels.update
+- settings.getFooterData
+- settings.getMediaConfig
+- sportPlayers.list
+- sportPlayers.remove
+- sportPlayers.save
+- sportPlayers.seedSportPlayers
+- sportTeams.get
+- sportTeams.list
+- sportTeams.remove
+- sportTeams.save
+- sportTeams.seedSportTeams
+- stories.create
+- stories.generateUploadUrl
+- stories.getActive
+- stories.getAll
+- stories.getFileUrl
+- stories.remove
+- stories.update
+- updates.create
+- updates.list
+- updates.listPaginated
+- updates.remove
+- updates.update
+- users.currentUser
+- users.ensureCurrentUserProfile
+- users.generateUploadUrl
+- users.getAuthors
+- users.getBySlugOrName
+- users.getFileUrl
+- users.updateCurrentCredentials
+- users.updateCurrentProfile
+
+## Files/components using useQuery/useMutation/useAction/usePaginatedQuery
+- src/components/ArticleCard.tsx
+- src/components/AuthorFooterCard.tsx
+- src/components/CategorySection.tsx
+- src/components/Footer.tsx
+- src/components/Navbar.tsx
+- src/components/NewsletterSection.tsx
+- src/components/PatronageSlider.tsx
+- src/components/StoriesSection.tsx
+- src/components/admin/MediaLibraryPicker.tsx
+- src/components/admin/article-editor/helpers/AuthorAutocomplete.tsx
+- src/components/ads/AdSlot.tsx
+- src/components/ads/HomepageHeroAd.tsx
+- src/components/ads/PartnerLogosStrip.tsx
+- src/components/ads/SponsoredBlock.tsx
+- src/components/article/ArticlePoll.tsx
+- src/components/landing/AktualnosciSection.tsx
+- src/components/landing/BydgoszczanieSlider.tsx
+- src/components/landing/EventsSection.tsx
+- src/components/landing/HeroSection.tsx
+- src/components/landing/ReelsStrip.tsx
+- src/components/landing/SidebarWidgets.tsx
+- src/components/mobile/MobileGlobalTopBar.tsx
+- src/components/mobile/MobileLanding.tsx
+- src/components/obituaries/ObituaryForm.tsx
+- src/pages/AdminArticles.tsx
+- src/pages/AdminStories.tsx
+- src/pages/ArticlePage.tsx
+- src/pages/AuthorPage.tsx
+- src/pages/AuthorsListPage.tsx
+- src/pages/CategoryPage.tsx
+- src/pages/DynamicRoute.tsx
+- src/pages/EventPage.tsx
+- src/pages/InvestmentProfilePage.tsx
+- src/pages/InvestmentsPage.tsx
+- src/pages/InvestmentsTracking.tsx
+- src/pages/Landing.tsx
+- src/pages/ObituariesPage.tsx
+- src/pages/ObituaryPage.tsx
+- src/pages/OurActionsPage.tsx
+- src/pages/PoliticianProfilePage.tsx
+- src/pages/PoliticiansDatabase.tsx
+- src/pages/PoliticsPage.tsx
+- src/pages/ProfilePage.tsx
+- src/pages/ReelsPage.tsx
+- src/pages/RoutePage.tsx
+- src/pages/SearchPage.tsx
+- src/pages/SportPage.tsx
+- src/pages/SportTeamProfilePage.tsx
+- src/pages/StaticPage.tsx
+- src/pages/StopPage.tsx
+- src/pages/TimetablePage.tsx
+- src/pages/UpdatesPage.tsx
+- src/pages/admin/AdminArticles.tsx
+- src/pages/admin/AdminChat.tsx
+- src/pages/admin/AdminEvents.tsx
+- src/pages/admin/AdminMenu.tsx
+- src/pages/admin/AdminObituaries.tsx
+- src/pages/admin/AdminPages.tsx
+- src/pages/admin/AdminReels.tsx
+- src/pages/admin/AdminStories.tsx
+- src/pages/admin/AdminUpdates.tsx
+
+## Modules already covered by Laravel API
+- Auth (register/login/logout/me) — frontend auth hook now uses REST
+- Articles (index/show/store/update/destroy)
+- Events (index/show/store/update/destroy)
+- Media (list/show/upload) — user profile upload now uses /media/upload
+
+## Modules still missing in Laravel
+- Ads (public placement inventory + tracking endpoints)
+- Comments
+- Newsletter
+- Categories + category entities/hero config
+- Stories
+- Reels
+- Pages + page versions
+- Updates
+- Obituaries
+- Users/admin users
+- Settings (portal settings, footer, media config)
+- Menu items
+- GTFS data endpoints
+- Investments + politicians + sport teams/players + match results
+- Media library management (folders, assets metadata)
+- AI chat/admin chat
+
+## Estimated remaining migration work
+- Backend REST coverage: ~15-20 modules/endpoints to implement.
+- Frontend changes: replace Convex hooks in ~65+ components/pages.
+- Expected effort: 3-5 focused iterations (API creation + frontend swap), depending on admin panel depth (ads, GTFS, media library, CMS).

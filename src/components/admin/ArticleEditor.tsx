@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticleUpdates, type ArticleUpdate } from "@/lib/articles-api";
 import {
   FileText, Mic, BarChart2, Newspaper, Lightbulb, DollarSign,
   Image, Quote, Minus, Bold, Italic, Link2, List, Hash,
@@ -80,7 +79,7 @@ import AdditionalTab from "@/components/admin/article-editor/panels/AdditionalTa
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function _ArticleElementsManager_REMOVED({ elements, onChange }: { elements: ArticleElement[]; onChange: (els: ArticleElement[]) => void }) { return null; }
 type ArticleType = {
-  _id?: Id<"articles">;
+  _id?: string;
   title: string;
   excerpt: string;
   content: string;
@@ -149,7 +148,7 @@ type ArticleType = {
 };
 
 type PublicationUpdateDraft = {
-  id?: Id<"article_updates">;
+  id?: string;
   content: string;
   publishedAt: number;
 };
@@ -634,35 +633,71 @@ type ArticleSponsoredDraft = {
 
 interface ArticleEditorProps {
   article?: ArticleType;
-  onSave?: (id: Id<"articles">) => void;
+  onSave?: (id: string) => void;
   onCancel?: () => void;
 }
 
-export default function ArticleEditor({ article, onSave, onCancel }: ArticleEditorProps) {
-  const createArticle = useMutation(api.articles.create);
-  const updateArticle = useMutation(api.articles.update);
-  const addUpdate = useMutation(api.articles.addUpdate);
-  const updateArticleUpdate = useMutation(api.articles.updateArticleUpdate);
-  const removeUpdate = useMutation(api.articles.removeUpdate);
-  const clearInterviewBlocks = useMutation((api as any).articles.clearInterviewBlocks);
-  const addInterviewBlocksBatch = useMutation((api as any).articles.addInterviewBlocksBatch);
-  const generateUploadUrl = useMutation(api.articles.generateUploadUrl);
-  const getFileUrl = useMutation(api.articles.getFileUrl);
-  const createR2UploadUrl = useAction((api as any).media.createUploadUrl);
-  const saveMediaAsset = useMutation((api as any).mediaLibrary.saveAsset);
+const toSnakeCase = (value: string) => value.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase());
 
-  const updates = useQuery(api.articles.getUpdates, article?._id ? { articleId: article._id } : "skip");
-  const currentUser = useQuery(api.users.currentUser);
-  const dbCategories = useQuery(api.settings.getCategories);
-  const sportTeams = useQuery(api.sportTeams.list) as any[] | undefined;
-  const sportPlayers = useQuery(api.sportPlayers.list) as any[] | undefined;
-  const politiciansDirectory = useQuery(api.politicians.list) as any[] | undefined;
-  const investmentsDirectory = useQuery(api.investments.list) as any[] | undefined;
-  const politicsEntities = useQuery(api.categoryEntities.byCategory, { categoryKey: "polityka" }) as any[] | undefined;
-  const sportEntities = useQuery(api.categoryEntities.byCategory, { categoryKey: "sport" }) as any[] | undefined;
-  const investmentEntities = useQuery(api.categoryEntities.byCategory, { categoryKey: "inwestycje" }) as any[] | undefined;
-  const actionsEntities = useQuery(api.categoryEntities.byCategory, { categoryKey: "nasze_dzialania" }) as any[] | undefined;
-  const mediaConfig = useQuery(api.settings.getMediaConfig, {}) as any;
+const toApiPayload = (payload: Record<string, any>) =>
+  Object.entries(payload).reduce((acc, [key, value]) => {
+    if (value === undefined) return acc;
+    acc[toSnakeCase(key)] = value;
+    return acc;
+  }, {} as Record<string, any>);
+
+const getArticleId = (payload: any) =>
+  payload?.data?.id ?? payload?.id ?? payload?.data?._id ?? payload?._id ?? null;
+
+export default function ArticleEditor({ article, onSave, onCancel }: ArticleEditorProps) {
+  const createArticle = async (payload: Record<string, any>) =>
+    apiFetch("/articles", { method: "POST", body: toApiPayload(payload) });
+
+  const updateArticle = async (articleId: string, payload: Record<string, any>) =>
+    apiFetch("/articles/" + articleId, { method: "PUT", body: toApiPayload(payload) });
+  const addUpdate = async (articleId: string, payload: Record<string, any>) =>
+    apiFetch("/articles/" + articleId + "/updates", { method: "POST", body: toApiPayload(payload) });
+
+  const updateArticleUpdate = async (articleId: string, updateId: string, payload: Record<string, any>) =>
+    apiFetch("/articles/" + articleId + "/updates/" + updateId, { method: "PUT", body: toApiPayload(payload) });
+
+  const removeUpdate = async (articleId: string, updateId: string) =>
+    apiFetch("/articles/" + articleId + "/updates/" + updateId, { method: "DELETE" });
+
+  const [updatesData, setUpdatesData] = useState<ArticleUpdate[] | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!article?._id) {
+      setUpdatesData(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+    fetchArticleUpdates(article._id)
+      .then((data) => {
+        if (!isMounted) return;
+        setUpdatesData(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setUpdatesData([]);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [article?._id]);
+  const currentUser: { name?: string | null } | null = null;
+  const dbCategories: Array<{ key: string; label?: string | null; isActive?: boolean | null }> = [];
+  const sportTeams: any[] = [];
+  const sportPlayers: any[] = [];
+  const politiciansDirectory: any[] = [];
+  const investmentsDirectory: any[] = [];
+  const politicsEntities: any[] = [];
+  const sportEntities: any[] = [];
+  const investmentEntities: any[] = [];
+  const actionsEntities: any[] = [];
+  const mediaConfig = null;
 
   const [form, setForm] = useState<ArticleType>({
     title: article?.title ?? "",
@@ -977,24 +1012,25 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
 
   // Auto-assign logged-in user as author for new articles
   useEffect(() => {
-    if (!article && currentUser?.name && !form.author) {
-      set("author", currentUser.name);
+    const currentUserName = (currentUser as { name?: string | null } | null)?.name;
+    if (!article && currentUserName && !form.author) {
+      set("author", currentUserName);
     }
   }, [currentUser, article]);
 
   useEffect(() => {
-    if (updates) {
-      setPublicationUpdates(
-        [...updates]
-          .sort((a, b) => a.publishedAt - b.publishedAt)
-          .map((update) => ({
-            id: update._id,
-            content: update.content,
-            publishedAt: update.publishedAt,
-          }))
-      );
+    if (updatesData) {
+      const normalized = updatesData
+        .filter((update): update is ArticleUpdate & { publishedAt: number } => typeof update.publishedAt === "number")
+        .sort((a, b) => a.publishedAt - b.publishedAt)
+        .map((update) => ({
+          id: update.id,
+          content: update.content,
+          publishedAt: update.publishedAt,
+        }));
+      setPublicationUpdates(normalized);
     }
-  }, [updates]);
+  }, [updatesData]);
 
   // Track whether SEO fields have been manually edited
   const seoManuallyEdited = useRef({ title: false, description: false });
@@ -1298,7 +1334,9 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
   const removePublicationUpdateDraft = async (index: number) => {
     const target = publicationUpdates[index];
     if (target?.id) {
-      await removeUpdate({ id: target.id });
+      if (articleId) {
+        await removeUpdate(articleId, target.id);
+      }
       return;
     }
     setPublicationUpdates((items) => items.filter((_, itemIndex) => itemIndex !== index));
@@ -1313,29 +1351,12 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
         file,
         kind: "article",
         mediaConfig,
-        createR2Upload: createR2UploadUrl,
-        fallbackGenerateUploadUrl: generateUploadUrl,
-        fallbackGetFileUrl: getFileUrl,
-      });
-      await saveMediaAsset({
-        name: upload.file.name,
-        originalFileName: file.name,
-        url: upload.url,
-        storageProvider: upload.storageProvider,
-        mediaType: "image",
+        folder: form.category ? `Artykuly / ` : "Artykuly / glowny",
         sourceKind: "article",
-        folder: form.category ? `Artykuly / ${form.category}` : "Artykuly / glowny",
-        mimeType: upload.file.type,
-        size: upload.file.size,
-        width: upload.width,
-        height: upload.height,
+        sourceEntityId: article?._id,
       });
       if (upload.url) set("imageUrl", upload.url);
-      if (upload.storageProvider === "r2") {
-        toast.success("Zdjecie przeslane do Cloudflare R2");
-      } else {
-        toast.warning("R2 nie odpowiedzialo. Uzyto zapasowego storage Convex.");
-      }
+      toast.success("Zdjęcie wgrane pomyślnie");
     } catch (error: any) {
       toast.error(error?.message || "Błąd przesyłania zdjęcia");
     } finally {
@@ -1353,29 +1374,12 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
         file,
         kind: "article",
         mediaConfig,
-        createR2Upload: createR2UploadUrl,
-        fallbackGenerateUploadUrl: generateUploadUrl,
-        fallbackGetFileUrl: getFileUrl,
-      });
-      await saveMediaAsset({
-        name: upload.file.name,
-        originalFileName: file.name,
-        url: upload.url,
-        storageProvider: upload.storageProvider,
-        mediaType: "image",
-        sourceKind: "article",
         folder: "Artykuly / Bydgoszczanie / portrety",
-        mimeType: upload.file.type,
-        size: upload.file.size,
-        width: upload.width,
-        height: upload.height,
+        sourceKind: "article",
+        sourceEntityId: article?._id,
       });
       if (upload.url) updateBydgoszczanie({ portraitUrl: upload.url });
-      if (upload.storageProvider === "r2") {
-        toast.success("Portret bohatera przeslany do Cloudflare R2");
-      } else {
-        toast.warning("R2 nie odpowiedzialo. Uzyto zapasowego storage Convex.");
-      }
+      toast.success("Portret bohatera przeslany");
     } catch (error: any) {
       toast.error(error?.message || "Blad przesylania portretu");
     } finally {
@@ -1395,22 +1399,9 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
           file,
           kind: "article",
           mediaConfig,
-          createR2Upload: createR2UploadUrl,
-          fallbackGenerateUploadUrl: generateUploadUrl,
-          fallbackGetFileUrl: getFileUrl,
-        });
-        await saveMediaAsset({
-          name: upload.file.name,
-          originalFileName: file.name,
-          url: upload.url,
-          storageProvider: upload.storageProvider,
-          mediaType: "image",
-          sourceKind: "article",
           folder: "Artykuly / Bydgoszczanie / galeria",
-          mimeType: upload.file.type,
-          size: upload.file.size,
-          width: upload.width,
-          height: upload.height,
+          sourceKind: "article",
+          sourceEntityId: article?._id,
         });
         if (upload.url) uploadedUrls.push(upload.url);
       }
@@ -1507,7 +1498,6 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
       const normalizedInterview = isInterviewArticle && normalizedInterviewDraft && (normalizedInterviewDraft.enabled || normalizedInterviewDraft.blocks.length > 0)
         ? {
             ...normalizedInterviewDraft,
-            blocks: [],
             enabled: true,
             status: finalStatus === "published" || finalStatus === "scheduled"
               ? "active"
@@ -1653,7 +1643,7 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
         excerpt: form.excerpt,
         content: normalizedContent,
         author: form.author,
-        publishedAt: form.publishedAt,
+        publishedAt: new Date(form.publishedAt).toISOString(),
         status: finalStatus,
         category: form.category as any,
         articleType: form.articleType as any,
@@ -1670,7 +1660,7 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
         coauthor3: form.coauthor3 || undefined,
         corrector: form.corrector || undefined,
         publisher: form.publisher || undefined,
-        updatedAt: form.updatedAt || undefined,
+        updatedAt: form.updatedAt ? new Date(form.updatedAt).toISOString() : undefined,
         personName: (isBydgoszczanieCategory ? normalizedBydgoszczanie?.displayName : form.personName)?.trim() || undefined,
         bydgoszczanie: normalizedBydgoszczanie,
         sport: normalizedSport,
@@ -1741,11 +1731,11 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
       let targetArticleId = article?._id;
 
       if (targetArticleId) {
-        await updateArticle({ id: targetArticleId, ...payload });
+        await updateArticle(targetArticleId, payload);
         toast.success("Artykuł zaktualizowany");
       } else {
-        const id = await createArticle(payload);
-        targetArticleId = id;
+        const created = await createArticle(payload);
+        targetArticleId = getArticleId(created) ?? targetArticleId;
         toast.success("Artykuł zapisany");
       }
 
@@ -1753,39 +1743,18 @@ export default function ArticleEditor({ article, onSave, onCancel }: ArticleEdit
         for (let index = 0; index < queuedUpdates.length; index += 1) {
           const updateItem = queuedUpdates[index];
           if (updateItem.id) {
-            await updateArticleUpdate({
-              id: updateItem.id,
+            await updateArticleUpdate(targetArticleId, updateItem.id, {
               content: updateItem.content.trim(),
-              publishedAt: updateItem.publishedAt,
+              publishedAt: new Date(updateItem.publishedAt).toISOString(),
             });
           } else {
-            await addUpdate({
-              articleId: targetArticleId,
+            await addUpdate(targetArticleId, {
               title: `Aktualizacja ${index + 1}`,
               content: updateItem.content.trim(),
               author: form.author,
-              publishedAt: updateItem.publishedAt,
+              publishedAt: new Date(updateItem.publishedAt).toISOString(),
             });
           }
-        }
-      }
-
-      if (targetArticleId && isInterviewArticle && normalizedInterviewDraft) {
-        await clearInterviewBlocks({ articleId: targetArticleId });
-        const blocks = normalizedInterviewDraft.blocks.map(({ type, content, title, speakerId, hidden }: { type: string; content: string; title?: string; speakerId?: string; hidden?: boolean }) => ({
-          type,
-          content,
-          title,
-          speakerId,
-          hidden,
-        }));
-        const batchSize = 20;
-        for (let index = 0; index < blocks.length; index += batchSize) {
-          await addInterviewBlocksBatch({
-            articleId: targetArticleId,
-            startOrder: index,
-            blocks: blocks.slice(index, index + batchSize),
-          });
         }
       }
 

@@ -1,7 +1,5 @@
 import { Search, Filter, Edit, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, Zap, AlertTriangle, ShieldCheck, BookmarkPlus, PenTool, ExternalLink } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import { ADMIN_FALLBACK_CATEGORIES } from "@/lib/adminCategories";
 
 const STATUS_OPTIONS = [
@@ -33,20 +31,10 @@ export default function ArticleList({
   handleEdit,
   handleDelete
 }: any) {
-  const dbCategories = useQuery(api.settings.getCategories);
   const [currentPage, setCurrentPage] = useState(1);
   const [labelFilter, setLabelFilter] = useState("all");
   const itemsPerPage = 10;
-  const categories = useMemo(() => {
-    const active = dbCategories?.filter((category) => category.isActive !== false) ?? [];
-    if (active.length === 0) {
-      return ADMIN_FALLBACK_CATEGORIES;
-    }
-    return active.map((category) => ({
-      value: category.key,
-      label: category.label,
-    }));
-  }, [dbCategories]);
+  const categories = ADMIN_FALLBACK_CATEGORIES;
 
   const labelFiltered = labelFilter === "all"
     ? filteredArticles

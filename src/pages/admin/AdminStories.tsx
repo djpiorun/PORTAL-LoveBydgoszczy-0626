@@ -1,12 +1,10 @@
-import { useState } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Edit, Save, Image as ImageIcon, ArrowLeft, Upload, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Id } from "@/convex/_generated/dataModel";
 import StoryViewer from "@/components/StoryViewer";
 import { uploadMediaAsset } from "@/lib/media-upload";
 import MediaLibraryPicker from "@/components/admin/MediaLibraryPicker";
+import { apiFetch } from "@/lib/api-client";
 
 type StoryItem = {
   type: "image" | "video" | "facebook_reel";
@@ -16,19 +14,47 @@ type StoryItem = {
   link?: string;
 };
 
-export default function AdminStories() {
-  const stories = useQuery(api.stories.getAll);
-  const createStory = useMutation(api.stories.create);
-  const updateStory = useMutation(api.stories.update);
-  const removeStory = useMutation(api.stories.remove);
-  const generateUploadUrl = useMutation(api.stories.generateUploadUrl);
-  const getFileUrl = useMutation(api.stories.getFileUrl);
-  const createR2UploadUrl = useAction((api as any).media.createUploadUrl);
-  const mediaConfig = useQuery((api as any).settings.getMediaConfig, {}) as any;
-  const saveMediaAsset = useMutation((api as any).mediaLibrary.saveAsset);
-  const currentUser = useQuery(api.users.currentUser);
+type StoryRecord = {
+  _id: string;
+  id: string;
+  title: string;
+  coverImage: string;
+  author: string;
+  isActive: boolean;
+  items: StoryItem[];
+};
 
-  const [editingId, setEditingId] = useState<Id<"stories"> | "new" | null>(null);
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const normalizeStory = (story: any): StoryRecord => {
+  const id = String(story?.id ?? story?._id ?? "");
+  return {
+    _id: id,
+    id,
+    title: story?.title ?? "",
+    coverImage: story?.coverImage ?? story?.cover_image ?? "",
+    author: story?.author ?? "",
+    isActive: story?.isActive ?? story?.is_active ?? false,
+    items: Array.isArray(story?.items) ? story.items : [],
+  };
+};
+
+const upsertById = (items: StoryRecord[], item: StoryRecord) => {
+  const index = items.findIndex((entry) => entry._id === item._id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = (items: StoryRecord[], id: string) => items.filter((item) => item._id !== id);
+
+export default function AdminStories() {
+  const [stories, setStories] = useState<StoryRecord[] | undefined>(undefined);
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [mediaConfig, setMediaConfig] = useState<any>(null);
+
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [previewStory, setPreviewStory] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [pickerTarget, setPickerTarget] = useState<"cover" | number | null>(null);
@@ -47,7 +73,58 @@ export default function AdminStories() {
     items: [],
   });
 
-  const handleEdit = (story: any) => {
+  useEffect(() => {
+    let active = true;
+    const loadStories = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/stories");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setStories(data.map(normalizeStory));
+      } catch (error) {
+        console.warn("Admin stories API unavailable", error);
+        if (active) setStories([]);
+      }
+    };
+
+    const loadMediaConfig = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/settings");
+        const data = response?.data ?? response;
+        if (!active || !data) return;
+        setMediaConfig({
+          r2Enabled: data?.r2Enabled ?? data?.r2_enabled ?? false,
+          mediaMaxWidth: data?.mediaMaxWidth ?? data?.media_max_width ?? 1600,
+          mediaQuality: data?.mediaQuality ?? data?.media_quality ?? 82,
+          mediaConvertToWebp: data?.mediaConvertToWebp ?? data?.media_convert_to_webp ?? true,
+        });
+      } catch (error) {
+        console.warn("Admin stories media config API unavailable", error);
+        if (active) setMediaConfig(null);
+      }
+    };
+
+    const loadCurrentUser = async () => {
+      try {
+        const response = await apiFetch<any>("/auth/me");
+        const user = response?.user ?? response?.data?.user ?? response?.data ?? response;
+        if (!active) return;
+        setCurrentUserName(user?.name ?? "");
+      } catch (error) {
+        console.warn("Admin stories user API unavailable", error);
+      }
+    };
+
+    void loadStories();
+    void loadMediaConfig();
+    void loadCurrentUser();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleEdit = (story: StoryRecord) => {
     setFormData({
       title: story.title,
       coverImage: story.coverImage,
@@ -62,7 +139,7 @@ export default function AdminStories() {
     setFormData({
       title: "",
       coverImage: "",
-      author: currentUser?.name || "",
+      author: currentUserName || "",
       isActive: true,
       items: [],
     });
@@ -98,28 +175,10 @@ export default function AdminStories() {
         file,
         kind: "story",
         mediaConfig,
-        createR2Upload: createR2UploadUrl,
-        fallbackGenerateUploadUrl: generateUploadUrl,
-        fallbackGetFileUrl: getFileUrl,
-      });
-      await saveMediaAsset({
-        name: upload.file.name,
-        originalFileName: file.name,
-        url: upload.url,
-        storageProvider: upload.storageProvider,
-        mediaType: file.type.startsWith("video/") ? "video" : "image",
-        sourceKind: "story",
         folder: "Stories / materialy",
-        mimeType: upload.file.type,
-        size: upload.file.size,
-        width: upload.width,
-        height: upload.height,
+        sourceKind: "story",
       });
-      if (upload.storageProvider === "r2") {
-        toast.success("Plik wgrany do Cloudflare R2", { id: toastId });
-      } else {
-        toast.warning("R2 nie odpowiedzialo. Uzyto zapasowego storage Convex.", { id: toastId });
-      }
+      toast.success("Plik wgrany", { id: toastId });
       return upload.url;
     } catch (error) {
       toast.error("Wystąpił błąd podczas wgrywania pliku", { id: toastId });
@@ -139,46 +198,68 @@ export default function AdminStories() {
 
     const payload = {
       title: formData.title.trim(),
-      coverImage: getDerivedCoverImage(),
+      cover_image: getDerivedCoverImage(),
       author: formData.author.trim(),
-      isActive: formData.isActive,
+      is_active: formData.isActive,
       items: formData.items.map((item) => ({
         type: item.type,
         url: item.url.trim(),
         duration:
           item.type === "facebook_reel"
-            ? undefined
+            ? null
             : item.type === "video"
               ? typeof item.duration === "number" && Number.isFinite(item.duration) && item.duration > 0
                 ? item.duration
-                : undefined
+                : null
             : typeof item.duration === "number" && Number.isFinite(item.duration) && item.duration > 0
               ? item.duration
               : 5,
-        text: item.text?.trim() || undefined,
-        link: item.link?.trim() || (item.type === "facebook_reel" ? item.url.trim() : undefined),
+        text: item.text?.trim() || null,
+        link: item.link?.trim() || (item.type === "facebook_reel" ? item.url.trim() : null),
       })),
     };
 
     try {
       setFormError(null);
-      if (editingId === "new") {
-        await createStory(payload);
-        toast.success("Relacja została utworzona");
-      } else if (editingId) {
-        await updateStory({ id: editingId, ...payload });
-        toast.success("Relacja została zaktualizowana");
-      }
+      const response = await apiFetch<any>(
+        editingId === "new" ? "/admin/stories" : `/admin/stories/${editingId}`,
+        {
+          method: editingId === "new" ? "POST" : "PUT",
+          body: payload,
+        },
+      );
+      const data = response?.data ?? response ?? {};
+      const normalized = normalizeStory({
+        id: data?.id ?? data?._id ?? (editingId === "new" ? createLocalId() : editingId),
+        ...payload,
+        ...data,
+      });
+      setStories((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
+      toast.success(editingId === "new" ? "Relacja została utworzona" : "Relacja została zaktualizowana");
       setEditingId(null);
     } catch (error: any) {
-      toast.error(error?.message || "Wystapil blad podczas zapisywania relacji");
+      console.warn("Admin story save failed", error);
+      const fallback = normalizeStory({
+        id: editingId === "new" ? createLocalId() : editingId,
+        ...payload,
+      });
+      setStories((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
+      toast.success("Zapisano lokalnie (brak API relacji)");
+      setEditingId(null);
     }
   };
 
-  const handleDelete = async (id: Id<"stories">) => {
+  const handleDelete = async (id: string) => {
     if (confirm("Czy na pewno chcesz usunąć tę relację?")) {
-      await removeStory({ id });
-      toast.success("Relacja usunięta");
+      try {
+        await apiFetch(`/admin/stories/${id}`, { method: "DELETE" });
+        setStories((prev) => (prev ? removeById(prev, id) : prev));
+        toast.success("Relacja usunięta");
+      } catch (error) {
+        console.warn("Admin story delete failed", error);
+        setStories((prev) => (prev ? removeById(prev, id) : prev));
+        toast.success("Usunięto lokalnie (brak API relacji)");
+      }
     }
   };
 

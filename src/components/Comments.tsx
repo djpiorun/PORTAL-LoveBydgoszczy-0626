@@ -1,9 +1,7 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { useCallback, useEffect, useState } from "react";
 import { Heart, Send, MessageCircle, CornerDownRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiFetch } from "@/lib/api-client";
 
 interface CommentsProps {
   targetId: string;
@@ -22,24 +20,34 @@ function timeAgo(ts: number) {
 }
 
 interface CommentType {
-  _id: Id<"comments">;
+  id: string;
   authorName: string;
   content: string;
   createdAt: number;
   likes: number;
   status?: string;
-  parentId?: Id<"comments">;
+  parentId?: string | null;
 }
+
+const normalizeComment = (comment: any): CommentType => ({
+  id: comment.id,
+  authorName: comment.author_name,
+  content: comment.content,
+  createdAt: comment.created_at ? new Date(comment.created_at).getTime() : Date.now(),
+  likes: comment.likes ?? 0,
+  status: comment.status ?? undefined,
+  parentId: comment.parent_id ?? null,
+});
 
 interface ReplyFormProps {
   targetId: string;
   targetType: string;
-  parentId: Id<"comments">;
+  parentId: string;
   onClose: () => void;
+  onSaved: () => Promise<void>;
 }
 
-function ReplyForm({ targetId, targetType, parentId, onClose }: ReplyFormProps) {
-  const createComment = useMutation(api.comments.create);
+function ReplyForm({ targetId, targetType, parentId, onClose, onSaved }: ReplyFormProps) {
   const [content, setContent] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,14 +57,18 @@ function ReplyForm({ targetId, targetType, parentId, onClose }: ReplyFormProps) 
     if (!content.trim()) return;
     setIsSubmitting(true);
     try {
-      await createComment({
-        targetId,
-        targetType,
-        authorName: authorName.trim() || "",
-        content: content.trim(),
-        parentId,
+      await apiFetch("/comments", {
+        method: "POST",
+        body: {
+          target_id: targetId,
+          target_type: targetType,
+          author_name: authorName.trim() || "",
+          content: content.trim(),
+          parent_id: parentId,
+        },
       });
       setContent("");
+      await onSaved();
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -113,12 +125,17 @@ interface CommentItemProps {
   targetId: string;
   targetType: string;
   depth?: number;
+  onSaved: () => Promise<void>;
 }
 
-function CommentItem({ comment, replies, targetId, targetType, depth = 0 }: CommentItemProps) {
-  const likeComment = useMutation(api.comments.like);
+function CommentItem({ comment, replies, targetId, targetType, depth = 0, onSaved }: CommentItemProps) {
   const [replyOpen, setReplyOpen] = useState(false);
   const hasAuthor = comment.authorName && comment.authorName.trim() !== "" && comment.authorName !== "Anonim";
+
+  const handleLike = async () => {
+    await apiFetch(`/comments/${comment.id}/like`, { method: "POST" });
+    await onSaved();
+  };
 
   return (
     <div className={`flex gap-3 group ${depth > 0 ? "ml-8 mt-2" : ""}`}>
@@ -153,7 +170,7 @@ function CommentItem({ comment, replies, targetId, targetType, depth = 0 }: Comm
             </button>
           )}
           <button
-            onClick={() => likeComment({ id: comment._id })}
+            onClick={handleLike}
             className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors"
           >
             <Heart className={`w-3.5 h-3.5 ${comment.likes > 0 ? "fill-red-500 text-red-500" : ""}`} />
@@ -165,8 +182,9 @@ function CommentItem({ comment, replies, targetId, targetType, depth = 0 }: Comm
             <ReplyForm
               targetId={targetId}
               targetType={targetType}
-              parentId={comment._id}
+              parentId={comment.id}
               onClose={() => setReplyOpen(false)}
+              onSaved={onSaved}
             />
           )}
         </AnimatePresence>
@@ -174,12 +192,13 @@ function CommentItem({ comment, replies, targetId, targetType, depth = 0 }: Comm
           <div className="mt-2 space-y-2 border-l-2 border-slate-100 pl-2">
             {replies.map((reply) => (
               <CommentItem
-                key={reply._id}
+                key={reply.id}
                 comment={reply}
                 replies={[]}
                 targetId={targetId}
                 targetType={targetType}
                 depth={1}
+                onSaved={onSaved}
               />
             ))}
           </div>
@@ -190,8 +209,34 @@ function CommentItem({ comment, replies, targetId, targetType, depth = 0 }: Comm
 }
 
 export default function Comments({ targetId, targetType }: CommentsProps) {
-  const comments = useQuery(api.comments.list, { targetId, targetType });
-  const createComment = useMutation(api.comments.create);
+  const [comments, setComments] = useState<CommentType[] | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadComments = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch<any>(`/comments?target_id=${encodeURIComponent(targetId)}&target_type=${encodeURIComponent(targetType)}`);
+      const data = Array.isArray(response) ? response : response?.data ?? [];
+      const items = data.map(normalizeComment);
+      setComments(items);
+    } catch {
+      setComments([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [targetId, targetType]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const run = async () => {
+      if (!isMounted) return;
+      await loadComments();
+    };
+    run();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadComments]);
 
   const [content, setContent] = useState("");
   const [authorName, setAuthorName] = useState("");
@@ -203,19 +248,22 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
 
     setIsSubmitting(true);
     try {
-      await createComment({
-        targetId,
-        targetType,
-        authorName: authorName.trim() || "",
-        content: content.trim(),
+      await apiFetch("/comments", {
+        method: "POST",
+        body: {
+          target_id: targetId,
+          target_type: targetType,
+          author_name: authorName.trim() || "",
+          content: content.trim(),
+        },
       });
       setContent("");
+      await loadComments();
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Build tree: top-level comments + their replies
   const topLevel = (comments ?? []).filter((c) => !c.parentId);
   const repliesMap: Record<string, CommentType[]> = {};
   (comments ?? []).forEach((c) => {
@@ -229,7 +277,7 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
-        {comments === undefined ? (
+        {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
@@ -241,11 +289,12 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
         ) : (
           topLevel.map((comment) => (
             <CommentItem
-              key={comment._id}
+              key={comment.id}
               comment={comment as CommentType}
-              replies={(repliesMap[comment._id as string] ?? []) as CommentType[]}
+              replies={(repliesMap[comment.id as string] ?? []) as CommentType[]}
               targetId={targetId}
               targetType={targetType}
+              onSaved={loadComments}
             />
           ))
         )}
@@ -258,22 +307,22 @@ export default function Comments({ targetId, targetType }: CommentsProps) {
             placeholder="Twój podpis (opcjonalnie)"
             value={authorName}
             onChange={(e) => setAuthorName(e.target.value)}
-            className="bg-slate-50 text-base md:text-sm px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 w-full md:w-1/2 transition-all font-medium text-slate-700 placeholder:text-slate-400"
+            className="bg-slate-50 text-sm px-4 py-2 rounded-full border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 w-full sm:w-1/2 font-medium text-slate-700 placeholder:text-slate-400"
           />
-          <div className="flex items-center gap-2 bg-slate-50 rounded-full border border-slate-200 p-1.5 pl-5 shadow-inner focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 focus-within:bg-white transition-all">
+          <div className="flex items-center gap-2 bg-slate-50 rounded-full border border-slate-200 p-1 pl-4 focus-within:ring-2 focus-within:ring-primary/20 focus-within:bg-white transition-all">
             <input
               type="text"
-              placeholder="Dodaj komentarz..."
+              placeholder="Napisz komentarz..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="flex-1 bg-transparent text-base md:text-sm focus:outline-none text-slate-800 placeholder:text-slate-400 font-medium"
+              className="flex-1 bg-transparent text-sm focus:outline-none text-slate-800 placeholder:text-slate-400 font-medium"
             />
             <button
               type="submit"
               disabled={isSubmitting || !content.trim()}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${content.trim() ? "bg-primary text-white shadow-md hover:scale-105 active:scale-95" : "bg-slate-200 text-slate-400"}`}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${content.trim() ? "bg-primary text-white shadow-md hover:scale-105 active:scale-95" : "bg-slate-200 text-slate-400"}`}
             >
-              <Send className="w-4 h-4 ml-0.5" />
+              <Send className="w-4 h-4" />
             </button>
           </div>
         </form>

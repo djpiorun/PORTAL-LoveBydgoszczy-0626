@@ -1,7 +1,5 @@
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import ArticleFormMain from "@/components/admin/article-form/ArticleFormMain";
 import ArticleFormSidebar from "@/components/admin/article-form/ArticleFormSidebar";
 import ArticleFormManagement from "@/components/admin/article-form/ArticleFormManagement";
@@ -18,14 +16,7 @@ export default function ArticleForm({
   setEditingId,
   editingId,
 }: any) {
-  const dbCategories = useQuery(api.settings.getCategories);
-
-  const categories =
-    dbCategories && dbCategories.length > 0
-      ? dbCategories
-          .filter((c: any) => c.isActive !== false)
-          .map((c: any) => ({ value: c.key, label: c.label }))
-      : ADMIN_FALLBACK_CATEGORIES;
+  const categories = ADMIN_FALLBACK_CATEGORIES;
 
   const validateForm = () => {
     if (!formData.title?.trim()) return "Tytuł jest wymagany";

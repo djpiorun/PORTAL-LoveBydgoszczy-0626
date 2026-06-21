@@ -1,5 +1,3 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import WeatherWidget from "@/components/WeatherWidget";
 import PatronageSlider from "@/components/PatronageSlider";
 import NewsletterSection from "@/components/NewsletterSection";
@@ -9,6 +7,7 @@ import SidebarAd from "@/components/ads/SidebarAd";
 import { Sparkles, Activity, Music, UtensilsCrossed, ChevronRight, Star, Bus } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Link } from "react-router";
+import { useArticles } from "@/hooks/use-articles-api";
 
 function CandleIcon() {
   return (
@@ -24,7 +23,7 @@ function CandleIcon() {
 }
 
 export default function SidebarWidgets() {
-  const featured = useQuery(api.articles.getFeatured);
+  const { articles: featured, isLoading } = useArticles({ featured: true, limit: 5 });
   const navigate = useNavigate();
 
   return (
@@ -119,12 +118,12 @@ export default function SidebarWidgets() {
           </div>
         </div>
         <div className="flex flex-col gap-3">
-          {!featured
+          {isLoading
             ? [...Array(5)].map((_, i) => (
                 <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-50 dark:bg-slate-800/60" />
               ))
-            : featured.slice(0, 5).map((article, i) => (
-                <ArticleCard key={article._id} article={article} index={i} compact />
+            : featured.map((article, i) => (
+                <ArticleCard key={article.id} article={article} index={i} compact />
               ))}
         </div>
       </div>

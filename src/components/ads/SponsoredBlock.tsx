@@ -1,20 +1,76 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { motion } from "framer-motion";
 import { ExternalLink, Star } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 interface SponsoredBlockProps {
   placement: string;
   className?: string;
 }
 
+const normalizeCreative = (creative: any) => ({
+  _id: String(creative?.id ?? creative?._id ?? ""),
+  name: creative?.name ?? "",
+  content: creative?.content ?? creative?.html ?? null,
+  desktopImageUrl: creative?.desktopImageUrl ?? creative?.desktop_image_url ?? creative?.image_url ?? creative?.imageUrl ?? null,
+  mobileImageUrl: creative?.mobileImageUrl ?? creative?.mobile_image_url ?? null,
+  targetUrl: creative?.targetUrl ?? creative?.target_url ?? null,
+});
+
+const normalizeAdsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.ads ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeCreative) : [];
+};
+
 export default function SponsoredBlock({ placement, className = "" }: SponsoredBlockProps) {
-  const ads = useQuery(api.ads.getAdsByPlacement, { placementSystemName: placement });
-  const trackImpression = useMutation(api.ads.trackImpression);
-  const trackClick = useMutation(api.ads.trackClick);
+  const [ads, setAds] = useState<any[] | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [impressed, setImpressed] = useState(false);
+
+  const trackImpression = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-impression", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads impression tracking unavailable", error);
+    }
+  }, []);
+
+  const trackClick = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-click", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads click tracking unavailable", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadAds = async () => {
+      try {
+        const payload = await apiFetch(`/ads?placement=${encodeURIComponent(placement)}`);
+        if (!active) return;
+        setAds(normalizeAdsPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setAds([]);
+        toast.warning("Reklamy są chwilowo niedostępne.");
+      }
+    };
+
+    loadAds();
+    return () => {
+      active = false;
+    };
+  }, [placement]);
 
   useEffect(() => {
     if (!ref.current || impressed || !ads || ads.length === 0) return;
@@ -22,7 +78,9 @@ export default function SponsoredBlock({ placement, className = "" }: SponsoredB
       ([entry]) => {
         if (entry.isIntersecting && !impressed) {
           setImpressed(true);
-          ads.forEach(ad => trackImpression({ creativeId: ad._id }));
+          ads.forEach((ad) => {
+            void trackImpression(ad._id);
+          });
         }
       },
       { threshold: 0.5 }
@@ -31,7 +89,7 @@ export default function SponsoredBlock({ placement, className = "" }: SponsoredB
     return () => observer.disconnect();
   }, [impressed, ads, trackImpression]);
 
-  if (ads === undefined || ads.length === 0) return null;
+  if (ads === null || ads.length === 0) return null;
 
   return (
     <div ref={ref} className={`py-6 ${className}`}>
@@ -50,7 +108,7 @@ export default function SponsoredBlock({ placement, className = "" }: SponsoredB
             transition={{ delay: i * 0.1 }}
             className="group cursor-pointer bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300"
             onClick={() => {
-              trackClick({ creativeId: ad._id });
+              trackClick(ad._id);
               if (ad.targetUrl) window.open(ad.targetUrl, "_blank", "noopener,noreferrer");
             }}
           >

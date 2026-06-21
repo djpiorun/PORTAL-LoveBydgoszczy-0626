@@ -8,8 +8,8 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Newspaper, Bell, Users, Heart, TramFront, CloudSun, HeartPulse,
@@ -55,6 +55,29 @@ function hasWhiteNavText(pathname: string): boolean {
 }
 
 type NavItem = { name: string; path: string; icon: LucideIcon; tooltip?: string; desc?: string };
+
+type MenuItem = {
+  label: string;
+  path: string;
+  icon: string;
+  tooltip?: string;
+  placement: string;
+  order: number;
+  isActive?: boolean;
+};
+
+type MenuPage = {
+  slug: string;
+  title: string;
+  excerpt?: string;
+};
+
+type MenuResponse = {
+  menu_items?: MenuItem[];
+  menu_pages?: MenuPage[];
+  menuItems?: MenuItem[];
+  menuPages?: MenuPage[];
+};
 
 const ROW1_ITEMS: NavItem[] = [
   { name: "Wiadomości",  path: "/miasto",      icon: Newspaper,  tooltip: "Najnowsze miejskie informacje" },
@@ -235,26 +258,55 @@ export default function Navbar() {
   const navigate   = useNavigate();
   const location   = useLocation();
   const isMobile   = useIsMobile();
+  const [menuData, setMenuData] = useState<MenuItem[]>([]);
+  const [pageMenuLinksData, setPageMenuLinksData] = useState<MenuPage[]>([]);
+  const [isMenuLoading, setIsMenuLoading] = useState(true);
 
-  const navData = useQuery(api.menuItems.getNavData);
-  const menuData = navData?.menuItems;
-  const pageMenuLinksData = navData?.menuPages ?? [];
-  const hasConvexData = menuData !== undefined && menuData.length > 0;
+  useEffect(() => {
+    let isMounted = true;
 
-  const moreLinks: NavItem[] = hasConvexData
-    ? menuData!.filter(i => i.placement === "more" && i.isActive).sort((a, b) => a.order - b.order)
+    const loadMenu = async () => {
+      setIsMenuLoading(true);
+      try {
+        const data = await apiFetch<MenuResponse>("/menu/nav");
+        if (!isMounted) return;
+        setMenuData(data?.menu_items ?? data?.menuItems ?? []);
+        setPageMenuLinksData(data?.menu_pages ?? data?.menuPages ?? []);
+      } catch (error) {
+        if (!isMounted) return;
+        setMenuData([]);
+        setPageMenuLinksData([]);
+        toast.error("Nie udało się pobrać menu.");
+      } finally {
+        if (isMounted) setIsMenuLoading(false);
+      }
+    };
+
+    loadMenu();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const hasMenuData = menuData.length > 0;
+
+  const moreLinks: NavItem[] = hasMenuData
+    ? menuData.filter(i => i.placement === "more" && i.isActive).sort((a, b) => a.order - b.order)
         .map(i => ({ name: i.label, path: i.path, icon: resolveIcon(i.icon), tooltip: i.tooltip, desc: i.tooltip }))
     : MORE_ITEMS;
 
-  const pageMenuLinks: NavItem[] = pageMenuLinksData.map((page: (typeof pageMenuLinksData)[number]) => ({
-    name: page.title,
-    path: `/${page.slug}`,
-    icon: Newspaper,
-    desc: page.excerpt ?? "Strona informacyjna portalu",
-  }));
+  const pageMenuLinks: NavItem[] = isMenuLoading
+    ? []
+    : pageMenuLinksData.map((page) => ({
+      name: page.title,
+      path: `/${page.slug}`,
+      icon: Newspaper,
+      desc: page.excerpt ?? "Strona informacyjna portalu",
+    }));
 
-  const kontaktLinksBase: NavItem[] = hasConvexData
-    ? menuData!.filter(i => i.placement === "kontakt" && i.isActive).sort((a, b) => a.order - b.order)
+  const kontaktLinksBase: NavItem[] = hasMenuData
+    ? menuData.filter(i => i.placement === "kontakt" && i.isActive).sort((a, b) => a.order - b.order)
         .map(i => ({ name: i.label, path: i.path, icon: resolveIcon(i.icon), tooltip: i.tooltip, desc: i.tooltip }))
     : KONTAKT_ITEMS;
 

@@ -12,12 +12,11 @@ import AuthorAutocomplete from "@/components/admin/article-editor/helpers/Author
 import CategoryPicker from "@/components/admin/article-editor/helpers/CategoryPicker";
 import ArticleTypePicker from "@/components/admin/article-editor/helpers/ArticleTypePicker";
 import type { ArticleType } from "@/components/admin/article-editor/types/articleEditorTypes";
-import { Id } from "@/convex/_generated/dataModel";
 
 interface EditorRightPanelProps {
   form: ArticleType;
   set: (key: keyof ArticleType, value: any) => void;
-  article?: { _id?: Id<"articles"> };
+  article?: { _id?: string };
   now: number;
   categoryOptions: typeof CATEGORIES;
   rightTab: string;

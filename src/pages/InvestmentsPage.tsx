@@ -1,14 +1,15 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import BackToTop from "@/components/BackToTop";
 import { HardHat, TrendingUp, Activity, CheckCircle2, Clock, AlertCircle, BarChart3, MapPin, ChevronRight, Wrench, Building2, Calendar } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const STATUS_CONFIG = {
   all: { label: "Wszystkie", Icon: BarChart3, color: "from-orange-600 to-amber-600", shadow: "shadow-orange-500/30", light: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-300 dark:border-orange-800" },
@@ -161,17 +162,103 @@ function InvestmentHeroCard({ investment }: { investment: any }) {
   );
 }
 
+const normalizeInvestment = (investment: any) => ({
+  _id: String(investment?.id ?? investment?._id ?? ""),
+  slug: investment?.slug ?? "",
+  projectName: investment?.projectName ?? investment?.project_name ?? "",
+  description: investment?.description ?? "",
+  projectStatus: investment?.projectStatus ?? investment?.project_status ?? "planowana",
+  mainImageUrl: investment?.mainImageUrl ?? investment?.main_image_url ?? null,
+  progressPercent: investment?.progressPercent ?? investment?.progress_percent ?? undefined,
+  investor: investment?.investor ?? null,
+  contractor: investment?.contractor ?? null,
+  budget: investment?.budget ?? null,
+  location: investment?.location ?? null,
+  startDate: investment?.startDate ?? investment?.start_date ?? null,
+  endDate: investment?.endDate ?? investment?.end_date ?? null,
+  isActive: investment?.isActive ?? investment?.is_active ?? true,
+});
+
+const normalizeInvestmentsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.investments ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeInvestment) : [];
+};
+
+const normalizeHeroConfig = (payload: any) => {
+  const data = payload?.data ?? payload?.items ?? payload ?? [];
+  return Array.isArray(data)
+    ? data.map((item) => ({
+        itemId: item?.itemId ?? item?.item_id ?? item?.item ?? "",
+        order: item?.order ?? 0,
+        isVisible: item?.isVisible ?? item?.is_visible ?? true,
+      }))
+    : [];
+};
+
 export default function InvestmentsPage() {
   const nav = useNavigate();
-  const articles = useQuery(api.articles.list, { category: "inwestycje", limit: 50 });
+  const [articles, setArticles] = useState<any[] | undefined>(undefined);
   const resolvedArticles = useResolvedArticles(articles);
-  const allInvestments = useQuery(api.investments.list, {});
-  const heroConfig = useQuery(api.categoryHeroConfig.getByCategory, { categoryKey: "inwestycje" });
+  const [allInvestments, setAllInvestments] = useState<any[] | null>(null);
+  const [heroConfig, setHeroConfig] = useState<any[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "35%"]);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+
+  useEffect(() => {
+    let active = true;
+    fetchArticles({ category: "inwestycje", limit: 50 })
+      .then((items) => {
+        if (!active) return;
+        setArticles(items);
+      })
+      .catch(() => {
+        if (!active) return;
+        setArticles([]);
+        toast.warning("Nie udało się pobrać inwestycji.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/investments")
+      .then((payload) => {
+        if (!active) return;
+        setAllInvestments(normalizeInvestmentsPayload(payload));
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllInvestments([]);
+        toast.warning("Lista inwestycji jest chwilowo niedostępna.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/category-hero-config?category=inwestycje")
+      .then((payload) => {
+        if (!active) return;
+        setHeroConfig(normalizeHeroConfig(payload));
+      })
+      .catch(() => {
+        if (!active) return;
+        setHeroConfig([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredArticles = resolvedArticles?.filter(a => {
     if (statusFilter === "all") return true;

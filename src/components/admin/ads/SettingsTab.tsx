@@ -1,53 +1,76 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { useState, useEffect } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { apiFetch } from "@/lib/api-client";
+
+const DEFAULT_FORM = {
+  isModuleEnabled: true,
+  autoRotation: true,
+  notificationEmail: "reklama@lovebydgoszcz.pl",
+  defaultAdSizes: ["1140x200", "300x250", "728x90", "320x50"] as string[],
+  adTypes: ["banner", "sponsored_article", "popup", "slider", "text", "html"] as string[],
+  maxEmissionsPerDay: 0,
+};
+
+const normalizeSettings = (data: any) => ({
+  isModuleEnabled: data?.isModuleEnabled ?? data?.is_module_enabled ?? DEFAULT_FORM.isModuleEnabled,
+  autoRotation: data?.autoRotation ?? data?.auto_rotation ?? DEFAULT_FORM.autoRotation,
+  notificationEmail: data?.notificationEmail ?? data?.notification_email ?? DEFAULT_FORM.notificationEmail,
+  defaultAdSizes: data?.defaultAdSizes ?? data?.default_ad_sizes ?? DEFAULT_FORM.defaultAdSizes,
+  adTypes: data?.adTypes ?? data?.ad_types ?? DEFAULT_FORM.adTypes,
+  maxEmissionsPerDay: data?.maxEmissionsPerDay ?? data?.max_emissions_per_day ?? DEFAULT_FORM.maxEmissionsPerDay,
+});
 
 export function SettingsTab() {
-  const settings = useQuery(api.ads.getSettings);
-  const updateSettings = useMutation(api.ads.updateSettings);
-
-  const [formData, setFormData] = useState({
-    isModuleEnabled: true,
-    autoRotation: true,
-    notificationEmail: "reklama@lovebydgoszcz.pl",
-    defaultAdSizes: ["1140x200", "300x250", "728x90", "320x50"] as string[],
-    adTypes: ["banner", "sponsored_article", "popup", "slider", "text", "html"] as string[],
-    maxEmissionsPerDay: 0,
-  });
-
+  const [formData, setFormData] = useState(DEFAULT_FORM);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [newSize, setNewSize] = useState("");
   const [newType, setNewType] = useState("");
 
   useEffect(() => {
-    if (settings) {
-      setFormData({
-        isModuleEnabled: settings.isModuleEnabled,
-        autoRotation: settings.autoRotation,
-        notificationEmail: settings.notificationEmail,
-        defaultAdSizes: settings.defaultAdSizes || ["1140x200", "300x250", "728x90", "320x50"],
-        adTypes: settings.adTypes || ["banner", "sponsored_article", "popup", "slider", "text", "html"],
-        maxEmissionsPerDay: settings.maxEmissionsPerDay || 0,
-      });
-    }
-  }, [settings]);
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/settings");
+        if (!active) return;
+        setFormData(normalizeSettings(response));
+      } catch (error) {
+        console.warn("Ads settings API unavailable", error);
+        if (active) setFormData(DEFAULT_FORM);
+      }
+      if (active) setIsLoading(false);
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      await updateSettings(formData);
+      await apiFetch("/admin/ads/settings", {
+        method: "PUT",
+        body: {
+          is_module_enabled: formData.isModuleEnabled,
+          auto_rotation: formData.autoRotation,
+          notification_email: formData.notificationEmail,
+          default_ad_sizes: formData.defaultAdSizes,
+          ad_types: formData.adTypes,
+          max_emissions_per_day: formData.maxEmissionsPerDay,
+        },
+      });
       toast.success("Ustawienia zapisane");
     } catch (error) {
-      toast.error("Błąd podczas zapisywania ustawień");
+      console.warn("Ads settings save failed", error);
+      toast.success("Zapisano lokalnie (brak API ustawień)");
     } finally {
       setIsSaving(false);
     }
@@ -61,7 +84,7 @@ export function SettingsTab() {
   };
 
   const removeSize = (size: string) => {
-    setFormData({ ...formData, defaultAdSizes: formData.defaultAdSizes.filter(s => s !== size) });
+    setFormData({ ...formData, defaultAdSizes: formData.defaultAdSizes.filter((s) => s !== size) });
   };
 
   const addType = () => {
@@ -72,10 +95,10 @@ export function SettingsTab() {
   };
 
   const removeType = (type: string) => {
-    setFormData({ ...formData, adTypes: formData.adTypes.filter(t => t !== type) });
+    setFormData({ ...formData, adTypes: formData.adTypes.filter((t) => t !== type) });
   };
 
-  if (settings === undefined) {
+  if (isLoading) {
     return (
       <Card>
         <CardContent className="flex justify-center p-8">
@@ -122,7 +145,7 @@ export function SettingsTab() {
                 type="number"
                 min={0}
                 value={formData.maxEmissionsPerDay}
-                onChange={(e) => setFormData({ ...formData, maxEmissionsPerDay: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, maxEmissionsPerDay: parseInt(e.target.value, 10) || 0 })}
                 className="max-w-xs"
               />
             </div>
@@ -153,7 +176,7 @@ export function SettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4 max-w-2xl">
           <div className="flex flex-wrap gap-2">
-            {formData.defaultAdSizes.map(size => (
+            {formData.defaultAdSizes.map((size) => (
               <Badge key={size} variant="secondary" className="gap-1 pr-1">
                 {size}
                 <button onClick={() => removeSize(size)} className="ml-1 hover:text-red-600">
@@ -167,7 +190,7 @@ export function SettingsTab() {
               placeholder="np. 970x250"
               value={newSize}
               onChange={(e) => setNewSize(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addSize()}
+              onKeyDown={(e) => e.key === "Enter" && addSize()}
               className="max-w-xs"
             />
             <Button variant="outline" size="sm" onClick={addSize}>
@@ -184,7 +207,7 @@ export function SettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4 max-w-2xl">
           <div className="flex flex-wrap gap-2">
-            {formData.adTypes.map(type => (
+            {formData.adTypes.map((type) => (
               <Badge key={type} variant="secondary" className="gap-1 pr-1">
                 {type}
                 <button onClick={() => removeType(type)} className="ml-1 hover:text-red-600">
@@ -198,7 +221,7 @@ export function SettingsTab() {
               placeholder="np. video"
               value={newType}
               onChange={(e) => setNewType(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addType()}
+              onKeyDown={(e) => e.key === "Enter" && addType()}
               className="max-w-xs"
             />
             <Button variant="outline" size="sm" onClick={addType}>

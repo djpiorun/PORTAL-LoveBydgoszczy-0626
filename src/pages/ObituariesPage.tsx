@@ -1,6 +1,4 @@
-import { useState } from "react";
-import { usePaginatedQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, Flame, Search, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -13,12 +11,87 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const CrossIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 36" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
     <path d="M10 0V10H4V14H10V36H14V14H20V10H14V0H10Z" />
   </svg>
 );
+
+type Obituary = {
+  _id: string;
+  slug: string;
+  type: "nekrolog" | "wspomnienie" | "pozegnanie" | string;
+  firstName: string;
+  lastName: string;
+  age?: number | null;
+  birthDate?: string | null;
+  deathDate?: string | null;
+  shortDescription?: string | null;
+  content?: string | null;
+  image?: string | null;
+  _creationTime?: number | null;
+};
+
+type FeedStatus = "LoadingFirstPage" | "LoadingMore" | "CanLoadMore" | "Done";
+
+type FeedParams = {
+  type?: string;
+  searchQuery?: string;
+  perPage?: number;
+};
+
+const normalizeObituaries = (payload: any): Obituary[] => {
+  if (Array.isArray(payload)) return payload as Obituary[];
+  if (Array.isArray(payload?.data)) return payload.data as Obituary[];
+  if (Array.isArray(payload?.results)) return payload.results as Obituary[];
+  return [];
+};
+
+const useObituariesFeed = ({ type, searchQuery, perPage = 12 }: FeedParams) => {
+  const [results, setResults] = useState<Obituary[]>([]);
+  const [status, setStatus] = useState<FeedStatus>("LoadingFirstPage");
+  const [page, setPage] = useState(1);
+
+  const fetchPage = useCallback(async (pageToLoad: number, replace: boolean) => {
+    setStatus(pageToLoad === 1 ? "LoadingFirstPage" : "LoadingMore");
+    const params = new URLSearchParams();
+    if (type) params.set("type", type);
+    if (searchQuery) params.set("search", searchQuery);
+    params.set("page", String(pageToLoad));
+    params.set("per_page", String(perPage));
+
+    try {
+      const payload = await apiFetch<any>(`/obituaries?${params.toString()}`);
+      const items = normalizeObituaries(payload);
+      const meta = payload?.meta ?? null;
+      setResults((prev) => (replace ? items : [...prev, ...items]));
+
+      const hasMore = meta?.current_page && meta?.last_page
+        ? meta.current_page < meta.last_page
+        : items.length === perPage;
+      setStatus(hasMore ? "CanLoadMore" : "Done");
+      setPage(pageToLoad);
+    } catch (error) {
+      if (replace) setResults([]);
+      setStatus("Done");
+      toast.error("Nie udało się pobrać nekrologów.");
+    }
+  }, [perPage, searchQuery, type]);
+
+  useEffect(() => {
+    fetchPage(1, true);
+  }, [fetchPage]);
+
+  const loadMore = () => {
+    if (status !== "CanLoadMore") return;
+    fetchPage(page + 1, false);
+  };
+
+  return { results, status, loadMore };
+};
 
 function ObituaryCard({ obituary, compact = false }: { obituary: any; compact?: boolean }) {
   const isNekrolog = obituary.type === 'nekrolog';
@@ -173,7 +246,7 @@ function ObituaryCard({ obituary, compact = false }: { obituary: any; compact?: 
 }
 
 function MobileObituarySection({ type, title }: { type: "nekrolog" | "wspomnienie" | "pozegnanie"; title: string }) {
-  const { results, status } = usePaginatedQuery(api.obituaries.getObituaries, { type }, { initialNumItems: 5 });
+  const { results, status } = useObituariesFeed({ type, perPage: 5 });
   if (results.length === 0 && status !== "LoadingFirstPage") return null;
   return (
     <div className="mb-6">
@@ -203,7 +276,7 @@ function MobileObituarySection({ type, title }: { type: "nekrolog" | "wspomnieni
 }
 
 function ObituarySection({ type, title, onViewMore }: { type: "nekrolog" | "wspomnienie" | "pozegnanie", title: string, onViewMore: () => void }) {
-  const { results, status } = usePaginatedQuery(api.obituaries.getObituaries, { type }, { initialNumItems: 4 });
+  const { results, status } = useObituariesFeed({ type, perPage: 4 });
   if (results.length === 0 && status !== "LoadingFirstPage") return null;
   return (
     <div className="mb-16">
@@ -219,7 +292,7 @@ function ObituarySection({ type, title, onViewMore }: { type: "nekrolog" | "wspo
 }
 
 function SearchResults({ query }: { query: string }) {
-  const { results, status, loadMore } = usePaginatedQuery(api.obituaries.getObituaries, { searchQuery: query }, { initialNumItems: 12 });
+  const { results, status, loadMore } = useObituariesFeed({ searchQuery: query, perPage: 12 });
   if (status === "LoadingFirstPage") {
     return <div className="text-center py-12"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div></div>;
   }
@@ -234,7 +307,7 @@ function SearchResults({ query }: { query: string }) {
       </div>
       {status === "CanLoadMore" && (
         <div className="mt-12 text-center">
-          <Button onClick={() => loadMore(12)} variant="outline" className="font-serif tracking-widest uppercase">Załaduj więcej</Button>
+          <Button onClick={() => loadMore()} variant="outline" className="font-serif tracking-widest uppercase">Załaduj więcej</Button>
         </div>
       )}
     </div>
@@ -242,7 +315,7 @@ function SearchResults({ query }: { query: string }) {
 }
 
 function FullList({ type, title, onBack }: { type: "nekrolog" | "wspomnienie" | "pozegnanie", title: string, onBack: () => void }) {
-  const { results, status, loadMore } = usePaginatedQuery(api.obituaries.getObituaries, { type }, { initialNumItems: 12 });
+  const { results, status, loadMore } = useObituariesFeed({ type, perPage: 12 });
   return (
     <div className="animate-in fade-in duration-500">
       <div className="flex items-center justify-between mb-8 border-b border-border pb-4">
@@ -256,7 +329,7 @@ function FullList({ type, title, onBack }: { type: "nekrolog" | "wspomnienie" | 
       </div>
       {status === "CanLoadMore" && (
         <div className="mt-12 text-center">
-          <Button onClick={() => loadMore(12)} variant="outline" className="font-serif tracking-widest uppercase">Załaduj więcej</Button>
+          <Button onClick={() => loadMore()} variant="outline" className="font-serif tracking-widest uppercase">Załaduj więcej</Button>
         </div>
       )}
     </div>
@@ -428,7 +501,7 @@ export default function ObituariesPage() {
 }
 
 function MobileSearchResults({ query }: { query: string }) {
-  const { results, status } = usePaginatedQuery(api.obituaries.getObituaries, { searchQuery: query }, { initialNumItems: 20 });
+  const { results, status } = useObituariesFeed({ searchQuery: query, perPage: 20 });
   if (status === "LoadingFirstPage") {
     return <div className="flex justify-center py-8"><div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>;
   }

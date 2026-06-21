@@ -1,20 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ArrowLeft, ArrowDownUp, Clock } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion } from "framer-motion";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 export default function RoutePage() {
   const { routeId } = useParams();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [activeDirection, setActiveDirection] = useState<number>(0);
+  const [routeDetails, setRouteDetails] = useState<any[] | undefined>(undefined);
 
-  const routeDetails = useQuery(api.gtfs.getRouteDetails, routeId ? { route_short_name: routeId } : "skip");
+  useEffect(() => {
+    if (!routeId) {
+      setRouteDetails([]);
+      return;
+    }
+    let active = true;
+    setRouteDetails(undefined);
+    apiFetch<any>(`/gtfs/routes/${routeId}`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.results ?? payload ?? [];
+        setRouteDetails(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRouteDetails([]);
+        toast.warning("Nie udało się pobrać danych linii.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [routeId]);
 
   if (routeDetails === undefined) {
     return (

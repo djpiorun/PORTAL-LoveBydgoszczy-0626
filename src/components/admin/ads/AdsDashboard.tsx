@@ -1,10 +1,73 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Megaphone, Image as ImageIcon, DollarSign, Calendar } from "lucide-react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
+
+type AdsCampaignStat = {
+  _id: string;
+  name: string;
+  partnerName?: string;
+  ctr: number;
+  views: number;
+  daysLeft?: number;
+};
+
+type AdsDashboardStats = {
+  activeCampaigns: number;
+  totalViews: number;
+  avgCtr: number;
+  estimatedRevenue: number;
+  topCampaigns: AdsCampaignStat[];
+  endingSoon: AdsCampaignStat[];
+};
+
+const DEFAULT_STATS: AdsDashboardStats = {
+  activeCampaigns: 0,
+  totalViews: 0,
+  avgCtr: 0,
+  estimatedRevenue: 0,
+  topCampaigns: [],
+  endingSoon: [],
+};
+
+const normalizeCampaign = (item: any): AdsCampaignStat => ({
+  _id: String(item?._id ?? item?.id ?? ""),
+  name: item?.name ?? "",
+  partnerName: item?.partnerName ?? item?.partner_name ?? "",
+  ctr: Number(item?.ctr ?? item?.avg_ctr ?? 0),
+  views: Number(item?.views ?? item?.total_views ?? 0),
+  daysLeft: item?.daysLeft ?? item?.days_left ?? undefined,
+});
+
+const normalizeStats = (data: any): AdsDashboardStats => ({
+  activeCampaigns: data?.activeCampaigns ?? data?.active_campaigns ?? 0,
+  totalViews: data?.totalViews ?? data?.total_views ?? 0,
+  avgCtr: Number(data?.avgCtr ?? data?.avg_ctr ?? 0),
+  estimatedRevenue: data?.estimatedRevenue ?? data?.estimated_revenue ?? 0,
+  topCampaigns: (data?.topCampaigns ?? data?.top_campaigns ?? []).map(normalizeCampaign),
+  endingSoon: (data?.endingSoon ?? data?.ending_soon ?? []).map(normalizeCampaign),
+});
 
 export function AdsDashboard() {
-  const stats = useQuery(api.ads.getDashboardStats);
+  const [stats, setStats] = useState<AdsDashboardStats | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        if (!active) return;
+        setStats(normalizeStats(response));
+      } catch (error) {
+        console.warn("Ads dashboard stats API unavailable", error);
+        if (active) setStats(DEFAULT_STATS);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (!stats) {
     return <div className="flex justify-center p-8"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>;

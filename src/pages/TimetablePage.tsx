@@ -1,24 +1,84 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Bus, TrainFront, Moon, Map as MapIcon } from "lucide-react";
 import RouteCategory from "@/components/timetable/RouteCategory";
 import StopSearch from "@/components/timetable/StopSearch";
 import TimetableHero from "@/components/timetable/TimetableHero";
 import TimetableEmptyState from "@/components/timetable/TimetableEmptyState";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 export default function TimetablePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [metadata, setMetadata] = useState<any | null | undefined>(undefined);
+  const [routes, setRoutes] = useState<any[] | undefined>(undefined);
+  const [stopResults, setStopResults] = useState<any[] | undefined>(undefined);
 
-  const metadata = useQuery(api.gtfs.getMetadata);
-  const routes = useQuery(api.gtfs.getRoutes);
-  const stopResults = useQuery(api.gtfs.searchStops, searchQuery.length > 2 ? { searchQuery } : "skip");
+  useEffect(() => {
+    let active = true;
+    setMetadata(undefined);
+    apiFetch<any>("/gtfs/metadata")
+      .then((payload) => {
+        if (!active) return;
+        setMetadata(payload?.data ?? payload?.metadata ?? payload ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setMetadata(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setRoutes(undefined);
+    apiFetch<any>("/gtfs/routes")
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.routes ?? payload ?? [];
+        setRoutes(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRoutes([]);
+        toast.warning("Nie udało się pobrać rozkładu jazdy.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery.length <= 2) {
+      setStopResults(undefined);
+      return;
+    }
+    let active = true;
+    setStopResults(undefined);
+    apiFetch<any>(`/gtfs/stops/search?query=${encodeURIComponent(searchQuery)}`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.results ?? payload ?? [];
+        setStopResults(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStopResults([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [searchQuery]);
 
   const uniqueRoutes = routes ? Array.from(new Map(routes.map(r => [r.route_short_name, r])).values()).sort((a, b) => {
     const numA = parseInt(a.route_short_name);
@@ -51,8 +111,8 @@ export default function TimetablePage() {
         }}
       >
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-          <img src="https://harmless-tapir-303.convex.cloud/api/storage/279b9aed-06a2-4f90-8ec6-6631b64751e7" alt="" className="absolute left-0 top-1/4 h-[60vh] object-contain opacity-[0.03] -translate-x-1/4" />
-          <img src="https://harmless-tapir-303.convex.cloud/api/storage/3fa75e41-1cde-48ef-88ad-cd2da549887a" alt="" className="absolute right-0 bottom-0 h-[50vh] object-contain opacity-[0.03] translate-x-1/4" />
+          <img src="/assets/timetable-tram.png" alt="" className="absolute left-0 top-1/4 h-[60vh] object-contain opacity-[0.03] -translate-x-1/4" />
+          <img src="/assets/timetable-bus.png" alt="" className="absolute right-0 bottom-0 h-[50vh] object-contain opacity-[0.03] translate-x-1/4" />
         </div>
         <div className={`${isMobile ? "max-w-md" : "max-w-5xl"} mx-auto px-4 sm:px-6 lg:px-8 relative z-10`}>
           {isMobile ? (

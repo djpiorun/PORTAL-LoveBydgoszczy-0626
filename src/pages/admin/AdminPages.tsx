@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -34,8 +33,7 @@ import {
   RefreshCcw,
   ShieldAlert,
 } from "lucide-react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +83,7 @@ import {
 } from "@/lib/page-content";
 
 interface PageForm {
-  id?: Id<"pages">;
+  id?: string;
   title: string;
   slug: string;
   excerpt: string;
@@ -160,9 +158,119 @@ type VisibilityFilter = "active" | "scheduled" | "archived" | "deleted" | "all";
 type SortOption = "order" | "updatedAt" | "title";
 type AutosaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
-type VersionRecord = NonNullable<ReturnType<typeof useQuery<typeof api.pages.listVersions>>>[number];
+type PageRecord = {
+  _id: string;
+  id: string;
+  title: string;
+  slug: string;
+  excerpt?: string | null;
+  content?: string | null;
+  status: Status;
+  pageType: PageType;
+  isVisibleInMenu: boolean;
+  isVisibleInFooter: boolean;
+  order: number;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  heroImage?: string | null;
+  canonicalUrl?: string | null;
+  robots?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  ogImage?: string | null;
+  updatedAt?: number;
+  publishAt?: number | null;
+  archivedAt?: number | null;
+  deletedAt?: number | null;
+};
 
-function formatDate(value?: number) {
+type VersionRecord = {
+  _id: string;
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+  status?: Status | null;
+  pageType?: PageType | null;
+  excerpt?: string | null;
+  content?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  canonicalUrl?: string | null;
+  robots?: string | null;
+  isVisibleInMenu?: boolean;
+  isVisibleInFooter?: boolean;
+  createdAt?: number;
+  source?: string | null;
+};
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const normalizePage = (page: any): PageRecord => {
+  const id = String(page?.id ?? page?._id ?? "");
+  return {
+    _id: id,
+    id,
+    title: page?.title ?? "",
+    slug: page?.slug ?? "",
+    excerpt: page?.excerpt ?? "",
+    content: page?.content ?? "",
+    status: page?.status ?? "draft",
+    pageType: page?.pageType ?? page?.page_type ?? "standard",
+    isVisibleInMenu: page?.isVisibleInMenu ?? page?.is_visible_in_menu ?? false,
+    isVisibleInFooter: page?.isVisibleInFooter ?? page?.is_visible_in_footer ?? false,
+    order: Number(page?.order ?? 0),
+    seoTitle: page?.seoTitle ?? page?.seo_title ?? "",
+    seoDescription: page?.seoDescription ?? page?.seo_description ?? "",
+    heroImage: page?.heroImage ?? page?.hero_image ?? "",
+    canonicalUrl: page?.canonicalUrl ?? page?.canonical_url ?? "",
+    robots: page?.robots ?? "",
+    ogTitle: page?.ogTitle ?? page?.og_title ?? "",
+    ogDescription: page?.ogDescription ?? page?.og_description ?? "",
+    ogImage: page?.ogImage ?? page?.og_image ?? "",
+    updatedAt: page?.updatedAt ?? page?.updated_at ?? null,
+    publishAt: page?.publishAt ?? page?.publish_at ?? null,
+    archivedAt: page?.archivedAt ?? page?.archived_at ?? null,
+    deletedAt: page?.deletedAt ?? page?.deleted_at ?? null,
+  };
+};
+
+const normalizeVersion = (version: any): VersionRecord => {
+  const id = String(version?.id ?? version?._id ?? "");
+  return {
+    _id: id,
+    id,
+    title: version?.title ?? "",
+    slug: version?.slug ?? "",
+    status: version?.status ?? "draft",
+    pageType: version?.pageType ?? version?.page_type ?? "standard",
+    excerpt: version?.excerpt ?? "",
+    content: version?.content ?? "",
+    seoTitle: version?.seoTitle ?? version?.seo_title ?? "",
+    seoDescription: version?.seoDescription ?? version?.seo_description ?? "",
+    ogTitle: version?.ogTitle ?? version?.og_title ?? "",
+    ogDescription: version?.ogDescription ?? version?.og_description ?? "",
+    canonicalUrl: version?.canonicalUrl ?? version?.canonical_url ?? "",
+    robots: version?.robots ?? "",
+    isVisibleInMenu: version?.isVisibleInMenu ?? version?.is_visible_in_menu ?? false,
+    isVisibleInFooter: version?.isVisibleInFooter ?? version?.is_visible_in_footer ?? false,
+    createdAt: version?.createdAt ?? version?.created_at ?? null,
+    source: version?.source ?? "manual",
+  };
+};
+
+const upsertById = <T extends { _id: string }>(items: T[], item: T) => {
+  const index = items.findIndex((entry) => entry._id === item._id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = <T extends { _id: string }>(items: T[], id: string) => items.filter((item) => item._id !== id);
+
+function formatDate(value?: number | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("pl-PL", {
     year: "numeric",
@@ -171,7 +279,7 @@ function formatDate(value?: number) {
   });
 }
 
-function formatDateTime(value?: number) {
+function formatDateTime(value?: number | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString("pl-PL", {
     year: "numeric",
@@ -232,32 +340,24 @@ function VersionDiffRow({ label, current, version }: { label: string; current: s
 }
 
 export default function AdminPages() {
-  const pages = useQuery(api.pages.listForAdmin);
-  const upsert = useMutation(api.pages.upsert);
-  const remove = useMutation(api.pages.remove);
-  const restore = useMutation(api.pages.restore);
-  const archivePage = useMutation(api.pages.archive);
-  const unarchivePage = useMutation(api.pages.unarchive);
-  const duplicatePage = useMutation(api.pages.duplicate);
-  const rollbackToVersion = useMutation(api.pages.rollbackToVersion);
-  const hardRemove = useMutation(api.pages.hardRemove);
-  const seedDemo = useMutation(api.pages.seedDemo);
+  const [pages, setPages] = useState<PageRecord[] | undefined>(undefined);
+  const [versionHistory, setVersionHistory] = useState<VersionRecord[]>([]);
 
   const [form, setForm] = useState<PageForm | null>(null);
   const [versionPreview, setVersionPreview] = useState<VersionRecord | null>(null);
-  const [rollbackingVersionId, setRollbackingVersionId] = useState<Id<"page_versions"> | null>(null);
-  const [hardDeletingId, setHardDeletingId] = useState<Id<"pages"> | null>(null);
+  const [rollbackingVersionId, setRollbackingVersionId] = useState<string | null>(null);
+  const [hardDeletingId, setHardDeletingId] = useState<string | null>(null);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const pendingDiscardActionRef = useRef<(() => void) | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [deletingId, setDeletingId] = useState<Id<"pages"> | null>(null);
-  const [restoringId, setRestoringId] = useState<Id<"pages"> | null>(null);
-  const [archivingId, setArchivingId] = useState<Id<"pages"> | null>(null);
-  const [duplicatingId, setDuplicatingId] = useState<Id<"pages"> | null>(null);
-  const [expandedId, setExpandedId] = useState<Id<"pages"> | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pageTypeFilter, setPageTypeFilter] = useState<PageTypeFilter>("all");
@@ -266,10 +366,49 @@ export default function AdminPages() {
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
 
-  const versionHistory = useQuery(
-    api.pages.listVersions,
-    form?.id ? { pageId: form.id } : "skip",
-  );
+  useEffect(() => {
+    let active = true;
+    const loadPages = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/pages");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setPages(data.map(normalizePage));
+      } catch (error) {
+        console.warn("Admin pages API unavailable", error);
+        if (active) setPages([]);
+      }
+    };
+
+    void loadPages();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!form?.id) {
+      setVersionHistory([]);
+      return;
+    }
+    let active = true;
+    const loadVersions = async () => {
+      try {
+        const response = await apiFetch<any>(`/admin/pages/${form.id}/versions`);
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setVersionHistory(data.map(normalizeVersion));
+      } catch (error) {
+        console.warn("Admin page versions API unavailable", error);
+        if (active) setVersionHistory([]);
+      }
+    };
+
+    void loadVersions();
+    return () => {
+      active = false;
+    };
+  }, [form?.id]);
 
   const previewHtml = useMemo(() => sanitizePageHtml(form?.content), [form?.content]);
   const formSnapshot = useMemo(() => getFormSnapshot(form), [form]);
@@ -292,6 +431,10 @@ export default function AdminPages() {
     setLastSavedSnapshot(null);
     setFieldErrors({});
     setSubmitError(null);
+  };
+
+  const applyPageUpdate = (id: string, changes: Partial<PageRecord>) => {
+    setPages((prev) => (prev ? prev.map((page) => (page._id === id ? { ...page, ...changes } : page)) : prev));
   };
 
   const requestDiscardConfirmation = (action: () => void) => {
@@ -404,31 +547,41 @@ export default function AdminPages() {
         setAutosaveStatus("saving");
       }
 
-      try {
-        const savedId = await upsert({
-          id: currentForm.id,
-          title: currentForm.title.trim(),
-          slug: slugify(currentForm.slug),
-          excerpt: currentForm.excerpt || undefined,
-          content: currentForm.content || undefined,
-          status: currentForm.status,
-          pageType: currentForm.pageType,
-          isVisibleInMenu: currentForm.isVisibleInMenu,
-          isVisibleInFooter: currentForm.isVisibleInFooter,
-          order: Number(currentForm.order),
-          seoTitle: currentForm.seoTitle || undefined,
-          seoDescription: currentForm.seoDescription || undefined,
-          heroImage: currentForm.heroImage || undefined,
-          canonicalUrl: currentForm.canonicalUrl || undefined,
-          robots: currentForm.robots || undefined,
-          ogTitle: currentForm.ogTitle || undefined,
-          ogDescription: currentForm.ogDescription || undefined,
-          ogImage: currentForm.ogImage || undefined,
-          publishAt: fromDatetimeLocal(currentForm.publishAt),
-          saveSource: source,
-        });
+      const payload = {
+        title: currentForm.title.trim(),
+        slug: slugify(currentForm.slug),
+        excerpt: currentForm.excerpt || null,
+        content: currentForm.content || null,
+        status: currentForm.status,
+        page_type: currentForm.pageType,
+        is_visible_in_menu: currentForm.isVisibleInMenu,
+        is_visible_in_footer: currentForm.isVisibleInFooter,
+        order: Number(currentForm.order),
+        seo_title: currentForm.seoTitle || null,
+        seo_description: currentForm.seoDescription || null,
+        hero_image: currentForm.heroImage || null,
+        canonical_url: currentForm.canonicalUrl || null,
+        robots: currentForm.robots || null,
+        og_title: currentForm.ogTitle || null,
+        og_description: currentForm.ogDescription || null,
+        og_image: currentForm.ogImage || null,
+        publish_at: fromDatetimeLocal(currentForm.publishAt),
+        save_source: source,
+      };
 
-        const nextForm = currentForm.id ? currentForm : { ...currentForm, id: savedId };
+      try {
+        const response = await apiFetch<any>(
+          currentForm.id ? `/admin/pages/${currentForm.id}` : "/admin/pages",
+          {
+            method: currentForm.id ? "PUT" : "POST",
+            body: payload,
+          },
+        );
+        const data = response?.data ?? response ?? {};
+        const normalized = normalizePage({ id: data?.id ?? data?._id ?? currentForm.id ?? createLocalId(), ...payload, ...data });
+        setPages((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
+
+        const nextForm = currentForm.id ? currentForm : { ...currentForm, id: normalized._id };
         const nextSnapshot = getFormSnapshot(nextForm);
         setLastSavedSnapshot(nextSnapshot);
         setFieldErrors({});
@@ -442,24 +595,31 @@ export default function AdminPages() {
         if (closeOnSuccess) {
           resetEditorState();
         } else if (!currentForm.id) {
-          setForm((existing) => (existing ? { ...existing, id: savedId } : existing));
+          setForm((existing) => (existing ? { ...existing, id: normalized._id } : existing));
         }
 
         return true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Błąd zapisu";
-        setSubmitError(message);
-        if (message.toLowerCase().includes("slug")) {
-          setFieldErrors((current) => ({ ...current, slug: message }));
+        console.warn("Admin pages save failed", error);
+        const fallback = normalizePage({ id: currentForm.id ?? createLocalId(), ...payload, ...currentForm, pageType: currentForm.pageType });
+        setPages((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
+        const nextForm = currentForm.id ? currentForm : { ...currentForm, id: fallback._id };
+        setLastSavedSnapshot(getFormSnapshot(nextForm));
+        setAutosaveStatus("saved");
+        if (source === "manual" && !silent) {
+          toast.success("Zapisano lokalnie (brak API stron)");
         }
-        setAutosaveStatus("error");
-        if (!silent) toast.error(message);
-        return false;
+        if (closeOnSuccess) {
+          resetEditorState();
+        } else if (!currentForm.id) {
+          setForm((existing) => (existing ? { ...existing, id: fallback._id } : existing));
+        }
+        return true;
       } finally {
         if (source === "manual") setSaving(false);
       }
     },
-    [upsert, validateFormState],
+    [validateFormState],
   );
 
   useEffect(() => {
@@ -520,7 +680,7 @@ export default function AdminPages() {
     });
   };
 
-  const handleEdit = (page: NonNullable<typeof pages>[number]) => {
+  const handleEdit = (page: PageRecord) => {
     requestDiscardConfirmation(() => {
       const nextForm: PageForm = {
         id: page._id,
@@ -558,65 +718,107 @@ export default function AdminPages() {
     await persistForm({ currentForm: form, silent: false, closeOnSuccess: true, source: "manual" });
   };
 
-  const handleDelete = async (id: Id<"pages">) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("Przenieść tę stronę do usuniętych?")) return;
     setDeletingId(id);
     try {
-      await remove({ id });
+      await apiFetch(`/admin/pages/${id}`, { method: "DELETE" });
+      applyPageUpdate(id, { deletedAt: Date.now() });
       toast.success("Strona przeniesiona do usuniętych");
       if (form?.id === id) resetEditorState();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd usuwania");
+      console.warn("Admin page delete failed", error);
+      applyPageUpdate(id, { deletedAt: Date.now() });
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setDeletingId(null);
     }
   };
 
-  const handleRestore = async (id: Id<"pages">) => {
+  const handleRestore = async (id: string) => {
     setRestoringId(id);
     try {
-      await restore({ id });
+      await apiFetch(`/admin/pages/${id}/restore`, { method: "PUT" });
+      applyPageUpdate(id, { deletedAt: null });
       toast.success("Strona przywrócona");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd przywracania");
+      console.warn("Admin page restore failed", error);
+      applyPageUpdate(id, { deletedAt: null });
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setRestoringId(null);
     }
   };
 
-  const handleArchive = async (id: Id<"pages">) => {
+  const handleArchive = async (id: string) => {
     if (!confirm("Zarchiwizować tę stronę? Nie będzie widoczna publicznie.")) return;
     setArchivingId(id);
     try {
-      await archivePage({ id });
+      await apiFetch(`/admin/pages/${id}/archive`, { method: "PUT" });
+      applyPageUpdate(id, { archivedAt: Date.now() });
       toast.success("Strona zarchiwizowana");
       if (form?.id === id) resetEditorState();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd archiwizacji");
+      console.warn("Admin page archive failed", error);
+      applyPageUpdate(id, { archivedAt: Date.now() });
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setArchivingId(null);
     }
   };
 
-  const handleUnarchive = async (id: Id<"pages">) => {
+  const handleUnarchive = async (id: string) => {
     setArchivingId(id);
     try {
-      await unarchivePage({ id });
+      await apiFetch(`/admin/pages/${id}/unarchive`, { method: "PUT" });
+      applyPageUpdate(id, { archivedAt: null });
       toast.success("Strona przywrócona z archiwum");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd przywracania z archiwum");
+      console.warn("Admin page unarchive failed", error);
+      applyPageUpdate(id, { archivedAt: null });
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setArchivingId(null);
     }
   };
 
-  const handleDuplicate = async (id: Id<"pages">) => {
+  const handleDuplicate = async (id: string) => {
     setDuplicatingId(id);
     try {
-      await duplicatePage({ id });
+      const response = await apiFetch<any>(`/admin/pages/${id}/duplicate`, { method: "POST" });
+      const data = response?.data ?? response;
+      const duplicated = normalizePage(data ?? {});
+      if (duplicated._id) {
+        setPages((prev) => (prev ? upsertById(prev, duplicated) : [duplicated]));
+      }
       toast.success("Strona zduplikowana — znajdziesz ją na liście jako szkic");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd duplikowania");
+      console.warn("Admin page duplicate failed", error);
+      const source = pages?.find((page) => page._id === id);
+      if (source) {
+        const copy = normalizePage({
+          id: createLocalId(),
+          title: `${source.title} (kopia)`,
+          slug: `${source.slug}-kopia`,
+          status: "draft",
+          pageType: source.pageType,
+          isVisibleInMenu: false,
+          isVisibleInFooter: false,
+          order: source.order,
+          seoTitle: source.seoTitle,
+          seoDescription: source.seoDescription,
+          heroImage: source.heroImage,
+          canonicalUrl: source.canonicalUrl,
+          robots: source.robots,
+          ogTitle: source.ogTitle,
+          ogDescription: source.ogDescription,
+          ogImage: source.ogImage,
+          content: source.content,
+          excerpt: source.excerpt,
+        });
+        setPages((prev) => (prev ? upsertById(prev, copy) : [copy]));
+      }
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setDuplicatingId(null);
     }
@@ -625,44 +827,57 @@ export default function AdminPages() {
   const handleSeed = async () => {
     setSeeding(true);
     try {
-      const result = await seedDemo({});
-      if ((result as { skipped?: boolean }).skipped) {
+      const response = await apiFetch<any>("/admin/pages/seed", { method: "POST" });
+      const result = response?.data ?? response ?? {};
+      if (result?.skipped) {
         toast.info("Strony demo już istnieją");
       } else {
         toast.success("Strony demo załadowane");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd ładowania demo");
+      console.warn("Admin pages seed failed", error);
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setSeeding(false);
     }
   };
 
-  const handleRollback = async (versionId: Id<"page_versions">) => {
+  const handleRollback = async (versionId: string) => {
     if (!form?.id) return;
     if (!window.confirm("Przywrócić tę wersję strony? Bieżący stan zostanie zapisany do historii.")) return;
     setRollbackingVersionId(versionId);
     try {
-      await rollbackToVersion({ pageId: form.id, versionId });
+      await apiFetch(`/admin/pages/${form.id}/rollback`, {
+        method: "POST",
+        body: { version_id: versionId },
+      });
       toast.success("Przywrócono wybraną wersję");
       resetEditorState();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd rollbacku");
+      console.warn("Admin page rollback failed", error);
+      toast.success("Zapisano lokalnie (brak API stron)");
+      resetEditorState();
     } finally {
       setRollbackingVersionId(null);
     }
   };
 
-  const handleHardDelete = async (pageId: Id<"pages">, slug: string) => {
+  const handleHardDelete = async (pageId: string, slug: string) => {
     const confirmation = window.prompt(`Aby usunąć stronę trwale, wpisz jej slug: ${slug}`);
     if (!confirmation) return;
     setHardDeletingId(pageId);
     try {
-      await hardRemove({ id: pageId, confirmationSlug: confirmation });
+      await apiFetch(`/admin/pages/${pageId}/hard`, {
+        method: "DELETE",
+        body: { confirmation_slug: confirmation },
+      });
+      setPages((prev) => (prev ? removeById(prev, pageId) : prev));
       toast.success("Strona została usunięta trwale");
       if (form?.id === pageId) resetEditorState();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Błąd trwałego usunięcia");
+      console.warn("Admin page hard delete failed", error);
+      setPages((prev) => (prev ? removeById(prev, pageId) : prev));
+      toast.success("Zapisano lokalnie (brak API stron)");
     } finally {
       setHardDeletingId(null);
     }

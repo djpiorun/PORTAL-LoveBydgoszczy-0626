@@ -1,15 +1,16 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import BackToTop from "@/components/BackToTop";
 import { Trophy, TrendingUp, Flame, Award, ChevronRight, Star, Calendar } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCountUp } from "@/hooks/useCountUp";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
 import { useNavigate, Link } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles, type Article } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const SPORT_FILTERS = [
   { id: "all", label: "Wszystkie", emoji: "🏆", color: "from-blue-600 to-indigo-600", shadow: "shadow-blue-500/30" },
@@ -196,16 +197,74 @@ function MatchResultCard({ match }: { match: any }) {
 
 export default function SportPage() {
   const nav = useNavigate();
-  const articles = useQuery(api.articles.list, { category: "sport", limit: 50 });
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [allTeams, setAllTeams] = useState<any[]>([]);
+  const [heroConfig, setHeroConfig] = useState<any[]>([]);
+  const [recentMatches, setRecentMatches] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const resolvedArticles = useResolvedArticles(articles);
-  const allTeams = useQuery(api.sportTeams.list, {});
-  const heroConfig = useQuery(api.categoryHeroConfig.getByCategory, { categoryKey: "sport" });
-  const recentMatches = useQuery(api.matchResults.recent, {});
   const [sportFilter, setSportFilter] = useState<string>("all");
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "40%"]);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const normalizeList = (payload: any) => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.results)) return payload.results;
+      return [];
+    };
+
+    const load = async () => {
+      setIsLoading(true);
+      const [articlesResult, teamsResult, heroResult, matchesResult] = await Promise.allSettled([
+        fetchArticles({ category: "sport", limit: 50 }),
+        apiFetch("/sport-teams"),
+        apiFetch("/category-hero-config?category_key=sport"),
+        apiFetch("/match-results/recent"),
+      ]);
+
+      if (!isMounted) return;
+
+      if (articlesResult.status === "fulfilled") {
+        setArticles(articlesResult.value ?? []);
+      } else {
+        setArticles([]);
+        toast.error("Nie udało się pobrać artykułów sportowych.");
+      }
+
+      if (teamsResult.status === "fulfilled") {
+        setAllTeams(normalizeList(teamsResult.value));
+      } else {
+        setAllTeams([]);
+        toast.error("Nie udało się pobrać listy drużyn.");
+      }
+
+      if (heroResult.status === "fulfilled") {
+        setHeroConfig(normalizeList(heroResult.value));
+      } else {
+        setHeroConfig([]);
+        toast.error("Nie udało się pobrać konfiguracji hero sportu.");
+      }
+
+      if (matchesResult.status === "fulfilled") {
+        setRecentMatches(normalizeList(matchesResult.value));
+      } else {
+        setRecentMatches([]);
+        toast.error("Nie udało się pobrać ostatnich wyników.");
+      }
+
+      setIsLoading(false);
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const safeArticles = resolvedArticles ?? [];
   const safeTeams = allTeams ?? [];
@@ -244,7 +303,7 @@ export default function SportPage() {
   const animatedZuzel = useCountUp(stats.zuzel);
   const animatedSiatkowka = useCountUp(stats.siatkowka);
 
-  if (articles === undefined || allTeams === undefined) {
+  if (isLoading && articles.length === 0) {
     return <SportSkeleton />;
   }
 

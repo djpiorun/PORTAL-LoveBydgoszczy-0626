@@ -1,35 +1,128 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Id } from "@/convex/_generated/dataModel";
 import ArticleEditor from "@/components/admin/ArticleEditor";
 import ArticleList from "@/components/admin/ArticleList";
+import { type ArticleType } from "@/components/admin/article-editor/types/articleEditorTypes";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles, type Article } from "@/lib/articles-api";
+
+const normalizeAuthorFooterStyle = (value?: string | null): ArticleType["authorFooterStyle"] => {
+  if (value === "graphic" || value === "business" || value === "classic" || value === "none") {
+    return value;
+  }
+  return undefined;
+};
+
+const toArticleType = (article: Article): ArticleType => ({
+  _id: article._id ?? article.id,
+  title: article.title ?? "",
+  excerpt: article.excerpt ?? "",
+  content: article.content ?? "",
+  category: article.category ?? "miasto",
+  imageUrl: article.imageUrl ?? undefined,
+  imageAuthor: article.imageAuthor ?? undefined,
+  author: article.author ?? "",
+  coauthor: article.coauthor ?? undefined,
+  coauthor2: article.coauthor2 ?? undefined,
+  coauthor3: article.coauthor3 ?? undefined,
+  corrector: article.corrector ?? undefined,
+  publisher: article.publisher ?? undefined,
+  publishedAt: article.publishedAt ?? Date.now(),
+  featured: article.featured ?? undefined,
+  isPatronage: article.isPatronage ?? undefined,
+  tags: article.tags ?? undefined,
+  hideInReels: article.hideInReels ?? undefined,
+  skipHomepage: article.skipHomepage ?? undefined,
+  personName: article.personName ?? undefined,
+  bydgoszczanie: article.bydgoszczanie ?? undefined,
+  sport: article.sport ?? undefined,
+  politics: article.politics ?? undefined,
+  investment: article.investment ?? undefined,
+  ourActions: article.ourActions ?? undefined,
+  sourceName: article.sourceName ?? undefined,
+  sourceUrl: article.sourceUrl ?? undefined,
+  expertQuote: article.expertQuote ?? undefined,
+  slug: article.slug ?? undefined,
+  articleType: article.articleType ?? undefined,
+  status: article.status ?? undefined,
+  layout: article.layout ?? undefined,
+  partnerName: article.partnerName ?? undefined,
+  partnerUrl: article.partnerUrl ?? undefined,
+  partnerLogoUrl: article.partnerLogoUrl ?? undefined,
+  partnerLabel: article.partnerLabel ?? undefined,
+  seoTitle: article.seoTitle ?? undefined,
+  seoDescription: article.seoDescription ?? undefined,
+  allowComments: article.allowComments ?? undefined,
+  showUpdates: article.showUpdates ?? undefined,
+  labelUrgent: article.labelUrgent ?? undefined,
+  labelImportant: article.labelImportant ?? undefined,
+  labelOurNews: article.labelOurNews ?? undefined,
+  labelMustKnow: article.labelMustKnow ?? undefined,
+  labelAuthorArticle: article.labelAuthorArticle ?? undefined,
+  label18Plus: article.label18Plus ?? undefined,
+  bibliography: article.bibliography ?? undefined,
+  sources: article.sources ?? undefined,
+  footerInfo: article.footerInfo ?? undefined,
+  sourceFromContact: article.sourceFromContact ?? undefined,
+  graphicsLayout: article.graphicsLayout ?? undefined,
+  categoryLayout: article.categoryLayout ?? undefined,
+  authorFooterStyle: normalizeAuthorFooterStyle(article.authorFooterStyle),
+  articleElements: article.articleElements ?? undefined,
+  poll: article.poll ?? undefined,
+  quiz: article.quiz ?? undefined,
+  interview: article.interview ?? undefined,
+  analysis: article.analysis ?? undefined,
+  report: article.report ?? undefined,
+  opinion: article.opinion ?? undefined,
+  dialog: article.dialog ?? undefined,
+  announcement: article.announcement ?? undefined,
+  sponsored: article.sponsored ?? undefined,
+});
 
 export default function AdminArticles() {
-  const articles = useQuery(api.articles.getAll);
-  const removeArticle = useMutation(api.articles.remove);
+  const [articles, setArticles] = useState<Article[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [editingArticle, setEditingArticle] = useState<any | null>(null);
+  const [editingArticle, setEditingArticle] = useState<ArticleType | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  const loadArticles = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchArticles();
+      setArticles(data);
+    } catch {
+      setArticles([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadArticles();
+  }, [loadArticles]);
+
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
-    return articles.filter(article => {
-      const matchesSearch = article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            article.author.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = categoryFilter === "all" || article.category === categoryFilter;
-      const matchesStatus = statusFilter === "all" || article.status === statusFilter;
+    return articles.filter((article) => {
+      const title = article.title ?? "";
+      const author = article.author ?? "";
+      const category = article.category ?? "";
+      const status = article.status ?? "";
+      const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        author.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = categoryFilter === "all" || category === categoryFilter;
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
       return matchesSearch && matchesCategory && matchesStatus;
     });
   }, [articles, searchQuery, categoryFilter, statusFilter]);
 
-  const handleEdit = (article: any) => {
-    setEditingArticle(article);
+  const handleEdit = (article: Article) => {
+    setEditingArticle(toArticleType(article));
     setIsCreating(false);
   };
 
@@ -38,9 +131,10 @@ export default function AdminArticles() {
     setIsCreating(true);
   };
 
-  const handleSaved = (_id: Id<"articles">) => {
+  const handleSaved = () => {
     setEditingArticle(null);
     setIsCreating(false);
+    void loadArticles();
   };
 
   const handleCancel = () => {
@@ -48,10 +142,14 @@ export default function AdminArticles() {
     setIsCreating(false);
   };
 
-  const handleDelete = async (id: Id<"articles">) => {
-    if (confirm("Czy na pewno chcesz usunąć ten artykuł?")) {
-      await removeArticle({ id });
+  const handleDelete = async (id: string) => {
+    if (!confirm("Czy na pewno chcesz usunąć ten artykuł?")) return;
+    try {
+      await apiFetch(`/articles/${id}`, { method: "DELETE" });
+      setArticles((prev) => (prev ? prev.filter((article) => article.id !== id) : prev));
       toast.success("Artykuł usunięty");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Nie udało się usunąć artykułu");
     }
   };
 
@@ -85,7 +183,7 @@ export default function AdminArticles() {
       </div>
 
       <ArticleList
-        articles={articles}
+        articles={isLoading ? undefined : articles}
         filteredArticles={filteredArticles}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}

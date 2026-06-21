@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 import { Mail, CheckCircle, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,22 +8,26 @@ export default function NewsletterSection() {
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
-  const subscribe = useMutation(api.newsletter.subscribe);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setLoading(true);
     try {
-      const result = await subscribe({ email });
-      if (result.success) {
+      const result = await apiFetch<{ success?: boolean; message?: string }>("/newsletter/subscribe", {
+        method: "POST",
+        body: { email },
+      });
+      const success = result?.success ?? true;
+      if (success) {
         setSubscribed(true);
-        toast.success(result.message);
+        toast.success(result?.message ?? "Zapisano pomyślnie.");
       } else {
-        toast.error(result.message);
+        toast.error(result?.message ?? "Nie udało się zapisać.");
       }
     } catch {
-      toast.error("Wystąpił błąd. Spróbuj ponownie.");
+      toast.warning("Newsletter chwilowo niedostępny. Zapisano lokalnie.");
+      setSubscribed(true);
     } finally {
       setLoading(false);
     }

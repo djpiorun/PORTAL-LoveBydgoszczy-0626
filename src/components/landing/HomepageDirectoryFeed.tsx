@@ -810,14 +810,7 @@ export function HomepageDirectoryFeedSections({
     };
   }, []);
 
-  const missingEnvVars = [
-    !availability.hasDirectoryConvexUrl ? "`VITE_DIRECTORY_CONVEX_URL`" : null,
-    !availability.hasDirectoryBaseUrl ? "`VITE_DIRECTORY_BASE_URL`" : null,
-  ].filter(Boolean);
-  const envErrorMessage =
-    missingEnvVars.length > 0
-      ? `Brakuje konfiguracji ${missingEnvVars.join(" i ")}, więc portal nie może wykonać pełnego połączenia z katalogiem.`
-      : null;
+  const envErrorMessage = !availability.hasDirectoryBaseUrl ? "Brakuje konfiguracji katalogu." : null;
   const errorMessage = envErrorMessage || state.error;
   const feed = state.status === "success" ? state.data : null;
   const portalReturnUrl = getPortalReturnUrl();

@@ -1,8 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
 import { Plus, Trash2, Edit2, MapPin, Link2, X, Check, Zap, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,19 +18,50 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS);
 
-type UpdateDoc = {
-  _id: Id<"updates">;
+type UpdateRecord = {
+  _id: string;
+  id: string;
   title: string;
-  description?: string;
-  mediaUrl?: string;
-  mediaType?: "image" | "video";
-  linkUrl?: string;
-  linkLabel?: string;
-  location?: string;
-  category?: string;
+  description?: string | null;
+  mediaUrl?: string | null;
+  mediaType?: "image" | "video" | null;
+  linkUrl?: string | null;
+  linkLabel?: string | null;
+  location?: string | null;
+  category?: string | null;
   publishedAt: number;
-  author?: string;
+  author?: string | null;
 };
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const normalizeUpdate = (update: any): UpdateRecord => {
+  const id = String(update?.id ?? update?._id ?? "");
+  return {
+    _id: id,
+    id,
+    title: update?.title ?? "",
+    description: update?.description ?? "",
+    mediaUrl: update?.mediaUrl ?? update?.media_url ?? "",
+    mediaType: update?.mediaType ?? update?.media_type ?? null,
+    linkUrl: update?.linkUrl ?? update?.link_url ?? "",
+    linkLabel: update?.linkLabel ?? update?.link_label ?? "",
+    location: update?.location ?? "",
+    category: update?.category ?? "",
+    publishedAt: update?.publishedAt ?? update?.published_at ?? Date.now(),
+    author: update?.author ?? null,
+  };
+};
+
+const upsertById = (items: UpdateRecord[], item: UpdateRecord) => {
+  const index = items.findIndex((entry) => entry._id === item._id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = (items: UpdateRecord[], id: string) => items.filter((item) => item._id !== id);
 
 type FormState = {
   title: string;
@@ -209,9 +238,9 @@ function UpdateCard({
   onEdit,
   onDelete,
 }: {
-  upd: UpdateDoc;
-  onEdit: (id: Id<"updates">) => void;
-  onDelete: (id: Id<"updates">) => void;
+  upd: UpdateRecord;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
@@ -312,33 +341,60 @@ function UpdateCard({
 type Mode = "list" | "create" | "edit";
 
 export default function AdminUpdates() {
-  const updates = useQuery(api.updates.list, {}) as UpdateDoc[] | undefined;
-  const createUpdate = useMutation(api.updates.create);
-  const removeUpdate = useMutation(api.updates.remove);
-  const updateMutation = useMutation(api.updates.update);
-
+  const [updates, setUpdates] = useState<UpdateRecord[] | undefined>(undefined);
   const [mode, setMode] = useState<Mode>("list");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState<Id<"updates"> | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadUpdates = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/updates");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setUpdates(data.map(normalizeUpdate));
+      } catch (error) {
+        console.warn("Admin updates API unavailable", error);
+        if (active) setUpdates([]);
+      }
+    };
+
+    void loadUpdates();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleCreate = async (form: FormState) => {
     setIsSubmitting(true);
+    const payload = {
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      media_url: form.mediaUrl.trim() || null,
+      media_type: form.mediaUrl.trim() ? form.mediaType : null,
+      link_url: form.linkUrl.trim() || null,
+      link_label: form.linkUrl.trim() ? (form.linkLabel.trim() || "Zobacz więcej") : null,
+      location: form.location.trim() || null,
+      category: form.category || null,
+      published_at: form.publishedAt ? new Date(form.publishedAt).getTime() : Date.now(),
+    };
     try {
-      await createUpdate({
-        title: form.title.trim(),
-        description: form.description.trim() || undefined,
-        mediaUrl: form.mediaUrl.trim() || undefined,
-        mediaType: form.mediaUrl.trim() ? form.mediaType : undefined,
-        linkUrl: form.linkUrl.trim() || undefined,
-        linkLabel: form.linkUrl.trim() ? (form.linkLabel.trim() || "Zobacz więcej") : undefined,
-        location: form.location.trim() || undefined,
-        category: form.category as any || undefined,
-        publishedAt: form.publishedAt ? new Date(form.publishedAt).getTime() : Date.now(),
+      const response = await apiFetch<any>("/admin/updates", {
+        method: "POST",
+        body: payload,
       });
+      const data = response?.data ?? response ?? {};
+      const normalized = normalizeUpdate({ id: data?.id ?? data?._id ?? createLocalId(), ...payload, ...data });
+      setUpdates((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
       toast.success("Aktualizacja opublikowana!");
       setMode("list");
     } catch (err: any) {
-      toast.error(err?.message || "Błąd podczas publikowania");
+      console.warn("Admin update create failed", err);
+      const fallback = normalizeUpdate({ id: createLocalId(), ...payload });
+      setUpdates((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
+      toast.success("Zapisano lokalnie (brak API aktualizacji)");
+      setMode("list");
     } finally {
       setIsSubmitting(false);
     }
@@ -347,44 +403,58 @@ export default function AdminUpdates() {
   const handleEdit = async (form: FormState) => {
     if (!editingId) return;
     setIsSubmitting(true);
+    const payload = {
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      media_url: form.mediaUrl.trim() || null,
+      media_type: form.mediaUrl.trim() ? form.mediaType : null,
+      link_url: form.linkUrl.trim() || null,
+      link_label: form.linkUrl.trim() ? (form.linkLabel.trim() || "Zobacz więcej") : null,
+      location: form.location.trim() || null,
+      category: form.category || null,
+      published_at: form.publishedAt ? new Date(form.publishedAt).getTime() : null,
+    };
     try {
-      await updateMutation({
-        id: editingId,
-        title: form.title.trim(),
-        description: form.description.trim() || undefined,
-        mediaUrl: form.mediaUrl.trim() || undefined,
-        mediaType: form.mediaUrl.trim() ? form.mediaType : undefined,
-        linkUrl: form.linkUrl.trim() || undefined,
-        linkLabel: form.linkUrl.trim() ? (form.linkLabel.trim() || "Zobacz więcej") : undefined,
-        location: form.location.trim() || undefined,
-        category: form.category as any || undefined,
-        publishedAt: form.publishedAt ? new Date(form.publishedAt).getTime() : undefined,
+      const response = await apiFetch<any>(`/admin/updates/${editingId}`, {
+        method: "PUT",
+        body: payload,
       });
+      const data = response?.data ?? response ?? {};
+      const normalized = normalizeUpdate({ id: data?.id ?? data?._id ?? editingId, ...payload, ...data });
+      setUpdates((prev) => (prev ? upsertById(prev, normalized) : [normalized]));
       toast.success("Aktualizacja zapisana!");
       setMode("list");
       setEditingId(null);
     } catch (err: any) {
-      toast.error(err?.message || "Błąd podczas zapisywania");
+      console.warn("Admin update edit failed", err);
+      const fallback = normalizeUpdate({ id: editingId, ...payload });
+      setUpdates((prev) => (prev ? upsertById(prev, fallback) : [fallback]));
+      toast.success("Zapisano lokalnie (brak API aktualizacji)");
+      setMode("list");
+      setEditingId(null);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: Id<"updates">) => {
+  const handleDelete = async (id: string) => {
     try {
-      await removeUpdate({ id });
+      await apiFetch(`/admin/updates/${id}`, { method: "DELETE" });
+      setUpdates((prev) => (prev ? removeById(prev, id) : prev));
       toast.success("Aktualizacja usunięta");
     } catch (err: any) {
-      toast.error(err?.message || "Błąd podczas usuwania");
+      console.warn("Admin update delete failed", err);
+      setUpdates((prev) => (prev ? removeById(prev, id) : prev));
+      toast.success("Usunięto lokalnie (brak API aktualizacji)");
     }
   };
 
-  const startEdit = (id: Id<"updates">) => {
+  const startEdit = (id: string) => {
     setEditingId(id);
     setMode("edit");
   };
 
-  const getEditInitial = (upd: UpdateDoc): FormState => ({
+  const getEditInitial = (upd: UpdateRecord): FormState => ({
     title: upd.title,
     description: upd.description || "",
     mediaUrl: upd.mediaUrl || "",

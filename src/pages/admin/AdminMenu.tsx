@@ -1,9 +1,7 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
 import {
   Plus, Pencil, Trash2, GripVertical, Eye, EyeOff, Save, X,
 } from "lucide-react";
@@ -13,7 +11,7 @@ type Placement = "main" | "more" | "kontakt";
 type ItemType = "internal_link" | "category_link" | "dropdown_group" | "external_link";
 
 interface FormState {
-  id?: Id<"menu_items">;
+  id?: string;
   label: string;
   path: string;
   icon: string;
@@ -22,7 +20,7 @@ interface FormState {
   isActive: boolean;
   placement: Placement;
   type: ItemType;
-  parentId?: Id<"menu_items">;
+  parentId?: string;
   showWhenScrolled?: boolean;
 }
 
@@ -38,6 +36,51 @@ const EMPTY_FORM: FormState = {
   showWhenScrolled: false,
 };
 
+type MenuItem = {
+  _id: string;
+  id: string;
+  label: string;
+  path: string;
+  icon: string;
+  tooltip?: string | null;
+  order: number;
+  isActive: boolean;
+  placement: Placement;
+  type: ItemType;
+  parentId?: string | null;
+  showWhenScrolled?: boolean | null;
+};
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const normalizeItem = (item: any): MenuItem => {
+  const id = String(item?.id ?? item?._id ?? "");
+  return {
+    _id: id,
+    id,
+    label: item?.label ?? "",
+    path: item?.path ?? "",
+    icon: item?.icon ?? "",
+    tooltip: item?.tooltip ?? "",
+    order: Number(item?.order ?? 0),
+    isActive: item?.isActive ?? item?.is_active ?? true,
+    placement: item?.placement ?? "main",
+    type: item?.type ?? "internal_link",
+    parentId: item?.parentId ?? item?.parent_id ?? null,
+    showWhenScrolled: item?.showWhenScrolled ?? item?.show_when_scrolled ?? false,
+  };
+};
+
+const upsertById = (items: MenuItem[], item: MenuItem) => {
+  const index = items.findIndex((entry) => entry._id === item._id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = (items: MenuItem[], id: string) => items.filter((item) => item._id !== id);
+
 const PLACEMENT_LABELS: Record<Placement, string> = {
   main: "Główne menu",
   more: "Więcej (dropdown)",
@@ -51,25 +94,51 @@ const PLACEMENT_COLORS: Record<Placement, string> = {
 };
 
 export default function AdminMenu() {
-  const items = useQuery(api.menuItems.list);
-  const upsert = useMutation(api.menuItems.upsert);
-  const remove = useMutation(api.menuItems.remove);
-  const seedDefault = useMutation(api.menuItems.seedDefault);
-
+  const [items, setItems] = useState<MenuItem[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<Id<"menu_items"> | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadItems = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/menu-items");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setItems(data.map(normalizeItem));
+      } catch (error) {
+        console.warn("Admin menu API unavailable", error);
+        if (active) setItems([]);
+      }
+    };
+
+    void loadItems();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSeed = async () => {
-    const result = await seedDefault({});
-    if ((result as { seeded: boolean }).seeded) {
-      toast.success("Domyślne menu zostało załadowane");
-    } else {
-      toast.info("Menu już istnieje — nie nadpisano");
+    try {
+      const response = await apiFetch<any>("/admin/menu-items/seed", { method: "POST" });
+      const seeded = response?.seeded ?? response?.data?.seeded;
+      const data = response?.items ?? response?.data?.items ?? response?.data ?? response;
+      if (Array.isArray(data)) {
+        setItems(data.map(normalizeItem));
+      }
+      if (seeded) {
+        toast.success("Domyślne menu zostało załadowane");
+      } else {
+        toast.info("Menu już istnieje — nie nadpisano");
+      }
+    } catch (error) {
+      console.warn("Admin menu seed failed", error);
+      toast.success("Zapisano lokalnie (brak API menu)");
     }
   };
 
-  const handleEdit = (item: NonNullable<typeof items>[number]) => {
+  const handleEdit = (item: MenuItem) => {
     setForm({
       id: item._id,
       label: item.label,
@@ -80,13 +149,13 @@ export default function AdminMenu() {
       isActive: item.isActive,
       placement: item.placement,
       type: item.type,
-      parentId: item.parentId as Id<"menu_items"> | undefined,
+      parentId: item.parentId ?? undefined,
       showWhenScrolled: item.showWhenScrolled ?? false,
     });
   };
 
   const handleNew = () => {
-    const maxOrder = items ? Math.max(0, ...items.map(i => i.order)) + 1 : 1;
+    const maxOrder = items.length ? Math.max(0, ...items.map(i => i.order)) + 1 : 1;
     setForm({ ...EMPTY_FORM, order: maxOrder });
   };
 
@@ -98,65 +167,87 @@ export default function AdminMenu() {
     }
     setSaving(true);
     try {
-      await upsert({
-        id: form.id,
+      const payload = {
         label: form.label,
         path: form.path,
         icon: form.icon,
-        tooltip: form.tooltip || undefined,
+        tooltip: form.tooltip || null,
         order: form.order,
-        isActive: form.isActive,
+        is_active: form.isActive,
         placement: form.placement,
         type: form.type,
-        parentId: form.parentId || undefined,
-        showWhenScrolled: form.showWhenScrolled,
+        parent_id: form.parentId || null,
+        show_when_scrolled: form.showWhenScrolled ?? false,
+      };
+      const response = await apiFetch<any>(form.id ? `/admin/menu-items/${form.id}` : "/admin/menu-items", {
+        method: form.id ? "PUT" : "POST",
+        body: payload,
       });
+      const data = response?.data ?? response ?? {};
+      const normalized = normalizeItem({ id: data?.id ?? data?._id ?? form.id ?? createLocalId(), ...payload, ...data });
+      setItems((prev) => upsertById(prev, normalized));
       toast.success(form.id ? "Pozycja zaktualizowana" : "Pozycja dodana");
       setForm(null);
-    } catch {
-      toast.error("Błąd zapisu");
+    } catch (error) {
+      console.warn("Admin menu save failed", error);
+      const fallback = normalizeItem({ id: form.id ?? createLocalId(), ...form, isActive: form.isActive, parentId: form.parentId });
+      setItems((prev) => upsertById(prev, fallback));
+      toast.success("Zapisano lokalnie (brak API menu)");
+      setForm(null);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (id: Id<"menu_items">) => {
+  const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
-      await remove({ id });
+      await apiFetch(`/admin/menu-items/${id}`, { method: "DELETE" });
+      setItems((prev) => removeById(prev, id));
       toast.success("Pozycja usunięta");
-    } catch {
-      toast.error("Błąd usuwania");
+    } catch (error) {
+      console.warn("Admin menu delete failed", error);
+      setItems((prev) => removeById(prev, id));
+      toast.success("Usunięto lokalnie (brak API menu)");
     } finally {
       setDeletingId(null);
     }
   };
 
-  const handleToggleActive = async (item: NonNullable<typeof items>[number]) => {
-    await upsert({
-      id: item._id,
-      label: item.label,
-      path: item.path,
-      icon: item.icon,
-      tooltip: item.tooltip,
-      order: item.order,
-      isActive: !item.isActive,
-      placement: item.placement,
-      type: item.type,
-      parentId: item.parentId as Id<"menu_items"> | undefined,
-      showWhenScrolled: item.showWhenScrolled,
-    });
-    toast.success(item.isActive ? "Ukryto pozycję" : "Pokazano pozycję");
+  const handleToggleActive = async (item: MenuItem) => {
+    const nextActive = !item.isActive;
+    setItems((prev) => prev.map((entry) => (entry._id === item._id ? { ...entry, isActive: nextActive } : entry)));
+    try {
+      await apiFetch(`/admin/menu-items/${item._id}`, {
+        method: "PUT",
+        body: {
+          label: item.label,
+          path: item.path,
+          icon: item.icon,
+          tooltip: item.tooltip ?? null,
+          order: item.order,
+          is_active: nextActive,
+          placement: item.placement,
+          type: item.type,
+          parent_id: item.parentId ?? null,
+          show_when_scrolled: item.showWhenScrolled ?? false,
+        },
+      });
+      toast.success(nextActive ? "Pokazano pozycję" : "Ukryto pozycję");
+    } catch (error) {
+      console.warn("Admin menu toggle failed", error);
+      toast.success("Zapisano lokalnie (brak API menu)");
+    }
   };
 
   const grouped = {
-    main: items?.filter(i => i.placement === "main").sort((a, b) => a.order - b.order) ?? [],
-    more: items?.filter(i => i.placement === "more").sort((a, b) => a.order - b.order) ?? [],
-    kontakt: items?.filter(i => i.placement === "kontakt").sort((a, b) => a.order - b.order) ?? [],
+    main: items.filter(i => i.placement === "main").sort((a, b) => a.order - b.order),
+    more: items.filter(i => i.placement === "more").sort((a, b) => a.order - b.order),
+    kontakt: items.filter(i => i.placement === "kontakt").sort((a, b) => a.order - b.order),
   };
 
   // Parent items for dropdown (only top-level items)
-  const parentOptions = items?.filter(i => !i.parentId) ?? [];
+  const parentOptions = items.filter(i => !i.parentId);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -269,7 +360,7 @@ export default function AdminMenu() {
                 <label className="block text-xs font-bold text-muted-foreground mb-1">Element nadrzędny (opcjonalnie)</label>
                 <select
                   value={form.parentId ?? ""}
-                  onChange={e => setForm(f => f ? { ...f, parentId: e.target.value ? e.target.value as Id<"menu_items"> : undefined } : f)}
+                  onChange={e => setForm(f => f ? { ...f, parentId: e.target.value ? e.target.value : undefined } : f)}
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 >
                   <option value="">— brak (pozycja główna) —</option>

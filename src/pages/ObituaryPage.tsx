@@ -1,14 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ArrowLeft, Facebook, Instagram, Download, Link as LinkIcon } from "lucide-react";
 import SEO from "@/components/SEO";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RealisticCandle from "@/components/obituaries/RealisticCandle";
-import { useRef } from "react";
 import html2canvas from "html2canvas";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
 
 const CrossIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 36" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -16,10 +15,61 @@ const CrossIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const normalizeObituary = (obituary: any) => ({
+  _id: String(obituary?.id ?? obituary?._id ?? ""),
+  slug: obituary?.slug ?? "",
+  type: obituary?.type ?? "nekrolog",
+  firstName: obituary?.firstName ?? obituary?.first_name ?? "",
+  lastName: obituary?.lastName ?? obituary?.last_name ?? "",
+  age: obituary?.age ?? null,
+  birthDate: obituary?.birthDate ?? obituary?.birth_date ?? null,
+  deathDate: obituary?.deathDate ?? obituary?.death_date ?? null,
+  shortDescription: obituary?.shortDescription ?? obituary?.short_description ?? null,
+  content: obituary?.content ?? "",
+  image: obituary?.image ?? null,
+  _creationTime: obituary?._creationTime ?? obituary?.created_at ?? obituary?.createdAt ?? null,
+  funeralDate: obituary?.funeralDate ?? obituary?.funeral_date ?? null,
+  funeralTime: obituary?.funeralTime ?? obituary?.funeral_time ?? null,
+  funeralPlace: obituary?.funeralPlace ?? obituary?.funeral_place ?? null,
+  cemeteryPlace: obituary?.cemeteryPlace ?? obituary?.cemetery_place ?? null,
+  submitterRelation: obituary?.submitterRelation ?? obituary?.submitter_relation ?? null,
+  submitterName: obituary?.submitterName ?? obituary?.submitter_name ?? null,
+  title: obituary?.title ?? null,
+});
+
+const normalizeObituaryPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.obituary ?? payload;
+  return data ? normalizeObituary(data) : null;
+};
+
 export default function ObituaryPage() {
   const { slug } = useParams();
-  const obituary = useQuery(api.obituaries.getObituaryBySlug, { slug: slug || "" });
+  const [obituary, setObituary] = useState<any | null | undefined>(undefined);
   const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!slug) {
+      setObituary(null);
+      return;
+    }
+    let active = true;
+    setObituary(undefined);
+    apiFetch(`/obituaries/slug/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const normalized = normalizeObituaryPayload(payload);
+        setObituary(normalized && normalized._id ? normalized : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setObituary(null);
+        toast.warning("Nie udało się pobrać nekrologu.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   const handleDownloadImage = async () => {
     if (!cardRef.current || !obituary) return;

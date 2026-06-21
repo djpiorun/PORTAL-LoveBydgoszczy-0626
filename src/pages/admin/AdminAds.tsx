@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { BarChart3, Megaphone, Image as ImageIcon, LayoutTemplate, Users, MessageSquare, Image, LineChart, CalendarDays, DollarSign, Settings, ImagePlus, ChevronRight, Activity, MousePointer, Eye, BookOpenText } from "lucide-react";
 import { DashboardTab } from "@/components/admin/ads/DashboardTab";
 import { CampaignsTab } from "@/components/admin/ads/CampaignsTab";
@@ -15,8 +15,7 @@ import { SettingsTab } from "@/components/admin/ads/SettingsTab";
 import { InstructionsTab } from "@/components/admin/ads/InstructionsTab";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 
 type AdminAdsTab =
   | "dashboard"
@@ -57,9 +56,43 @@ const TAB_ITEMS: {
   { value: "ustawienia", label: "Ustawienia", shortLabel: "Ustawienia", icon: Settings, component: SettingsTab },
 ];
 
+type AdsDashboardStats = {
+  activeCampaigns: number;
+  totalViews: number;
+  totalClicks: number;
+};
+
+const DEFAULT_STATS: AdsDashboardStats = {
+  activeCampaigns: 0,
+  totalViews: 0,
+  totalClicks: 0,
+};
+
 export default function AdminAds() {
   const [activeTab, setActiveTab] = useState<AdminAdsTab>("dashboard");
-  const stats = useQuery(api.ads.getDashboardStats);
+  const [stats, setStats] = useState<AdsDashboardStats>(DEFAULT_STATS);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        if (!active) return;
+        setStats({
+          activeCampaigns: response?.active_campaigns ?? response?.activeCampaigns ?? 0,
+          totalViews: response?.total_views ?? response?.totalViews ?? 0,
+          totalClicks: response?.total_clicks ?? response?.totalClicks ?? 0,
+        });
+      } catch (error) {
+        console.warn("Ads dashboard stats API unavailable", error);
+        if (active) setStats(DEFAULT_STATS);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const activeItem = useMemo(
     () => TAB_ITEMS.find((item) => item.value === activeTab) ?? TAB_ITEMS[0],

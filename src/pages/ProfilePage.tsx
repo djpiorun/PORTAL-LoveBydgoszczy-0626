@@ -1,19 +1,31 @@
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProfileImageField from "@/components/users/ProfileImageField";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserMediaUpload } from "@/hooks/use-user-media-upload";
-import { api } from "@/convex/_generated/api";
-import { useMutation } from "convex/react";
 import { BadgeInfo, Save, Shield, User } from "lucide-react";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
 import { Navigate } from "react-router";
+import { apiFetch } from "@/lib/api-client";
+
+type ProfileUser = NonNullable<ReturnType<typeof useAuth>["user"]> & {
+  username?: string;
+  subtitle?: string;
+  status?: string;
+  description?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  facebookUrl?: string;
+  instagramUrl?: string;
+  twitterUrl?: string;
+  websiteUrl?: string;
+  image?: string;
+  coverImage?: string;
+};
 
 export default function ProfilePage() {
   const { isAuthenticated, isLoading, user } = useAuth();
-  const updateCurrentProfile = useMutation(api.users.updateCurrentProfile);
-  const updateCurrentCredentials = useMutation(api.users.updateCurrentCredentials);
   const uploadUserMedia = useUserMediaUpload();
   const [uploadingField, setUploadingField] = useState<"image" | "coverImage" | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,20 +49,21 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
+    const profile = user as ProfileUser;
     setForm({
-      name: user.name || "",
-      username: user.username || "",
-      subtitle: user.subtitle || "",
-      status: user.status || "",
-      description: user.description || "",
-      contactEmail: user.contactEmail || "",
-      contactPhone: user.contactPhone || "",
-      facebookUrl: user.facebookUrl || "",
-      instagramUrl: user.instagramUrl || "",
-      twitterUrl: user.twitterUrl || "",
-      websiteUrl: user.websiteUrl || "",
-      image: user.image || "",
-      coverImage: user.coverImage || "",
+      name: profile.name || "",
+      username: profile.username || "",
+      subtitle: profile.subtitle || "",
+      status: profile.status || "",
+      description: profile.description || "",
+      contactEmail: profile.contactEmail || "",
+      contactPhone: profile.contactPhone || "",
+      facebookUrl: profile.facebookUrl || "",
+      instagramUrl: profile.instagramUrl || "",
+      twitterUrl: profile.twitterUrl || "",
+      websiteUrl: profile.websiteUrl || "",
+      image: profile.image || "",
+      coverImage: profile.coverImage || "",
       password: "",
       confirmPassword: "",
     });
@@ -101,20 +114,27 @@ export default function ProfilePage() {
         subtitle: form.subtitle,
         status: form.status,
         description: form.description,
-        contactEmail: form.contactEmail,
-        contactPhone: form.contactPhone,
-        facebookUrl: form.facebookUrl,
-        instagramUrl: form.instagramUrl,
-        twitterUrl: form.twitterUrl,
-        websiteUrl: form.websiteUrl,
+        contact_email: form.contactEmail,
+        contact_phone: form.contactPhone,
+        facebook_url: form.facebookUrl,
+        instagram_url: form.instagramUrl,
+        twitter_url: form.twitterUrl,
+        website_url: form.websiteUrl,
         image: form.image,
-        coverImage: form.coverImage,
+        cover_image: form.coverImage,
       };
 
-      await updateCurrentProfile(payload);
-      await updateCurrentCredentials({
-        username: form.username.trim(),
-        password: form.password.trim() || undefined,
+      await apiFetch("/users/me", {
+        method: "PUT",
+        body: payload,
+      });
+
+      await apiFetch("/users/me/credentials", {
+        method: "PUT",
+        body: {
+          username: form.username.trim(),
+          password: form.password.trim() || undefined,
+        },
       });
       setField("password", "");
       setField("confirmPassword", "");

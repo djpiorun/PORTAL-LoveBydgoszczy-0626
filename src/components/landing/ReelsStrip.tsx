@@ -1,9 +1,9 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Link, useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Play, Heart, Eye, ChevronRight, Film } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const categoryColors: Record<string, string> = {
   miasto: "bg-blue-500",
@@ -33,21 +33,45 @@ const categoryLabels: Record<string, string> = {
   nasze_dzialania: "Nasze Działania",
 };
 
+const normalizeReel = (reel: any) => ({
+  _id: String(reel?.id ?? reel?._id ?? ""),
+  title: reel?.title ?? "",
+  coverImage: reel?.coverImage ?? reel?.cover_image ?? reel?.cover ?? null,
+  category: reel?.category ?? null,
+  likes: reel?.likes ?? 0,
+  views: reel?.views ?? 0,
+});
+
+const normalizeReelsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.reels ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeReel) : [];
+};
+
 export default function ReelsStrip() {
-  const reels = useQuery(api.reels.listActive, { limit: 8 });
-  const seedMutation = useMutation(api.reels.seed);
+  const [reels, setReels] = useState<any[] | null>(null);
   const navigate = useNavigate();
 
-  // Auto-seed when empty
   useEffect(() => {
-    if (reels !== undefined && reels.length === 0) {
-      seedMutation({}).catch(() => {});
-    }
-  }, [reels, seedMutation]);
+    let active = true;
+    const loadReels = async () => {
+      try {
+        const payload = await apiFetch("/reels?limit=8");
+        if (!active) return;
+        setReels(normalizeReelsPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setReels([]);
+        toast.warning("Rolki są chwilowo niedostępne.");
+      }
+    };
 
-  // Don't hide — show skeleton while loading or seeding
-  // Only hide if we've confirmed empty after seed attempt (give it time)
-  if (reels !== undefined && reels.length === 0) return null;
+    loadReels();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (reels !== null && reels.length === 0) return null;
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">

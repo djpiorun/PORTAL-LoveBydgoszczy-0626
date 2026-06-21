@@ -1,18 +1,17 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { useConvexAuth } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { AlertCircle, ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole, Mail, UserRound } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/use-auth";
 
 interface AuthProps {
   redirectAfterAuth?: string;
 }
 
-const LOGIN_BACKGROUND_URL = "https://harmless-tapir-303.convex.cloud/api/storage/26397ddd-aeaa-4b97-9ad0-99ff757fc17f";
+const LOGIN_BACKGROUND_URL = "/assets/auth-background.png";
 const primaryButtonClass = "h-12 rounded-[1rem] border-0 bg-[linear-gradient(135deg,#fbbf24,#f97316)] px-5 text-sm font-black text-slate-950 shadow-[0_20px_45px_-18px_rgba(249,115,22,0.82)] transition-all duration-300 hover:-translate-y-0.5 hover:brightness-105";
 const secondaryButtonClass = "h-12 rounded-[1rem] border border-white/14 bg-white/8 px-5 text-sm font-bold text-white transition-colors duration-300 hover:bg-white/14";
 const inputClass = "h-14 rounded-[1.1rem] border border-white/14 bg-black/24 pl-12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-white/38 focus-visible:border-amber-300/40 focus-visible:bg-black/30 focus-visible:ring-2 focus-visible:ring-amber-300/18";
@@ -90,15 +89,12 @@ function ErrorMessage({ message }: { message: string | null }) {
 }
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
-  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
-  const { signIn } = useAuthActions();
+  const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const [step, setStep] = useState<"identifier" | "password" | "otpEmail" | "otpCode">("identifier");
+  const [step, setStep] = useState<"identifier" | "password">("identifier");
   const [identifier, setIdentifier] = useState("");
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +112,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setError(null);
     const nextIdentifier = identifier.trim();
     if (!nextIdentifier) {
-      setError("Podaj email lub nazwę użytkownika");
+      setError("Podaj email użytkownika");
       return;
     }
     setIdentifier(nextIdentifier);
@@ -129,15 +125,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await signIn("username-password", {
-        identifier: identifier.trim(),
-        password,
-      });
-
-      if (!result || result.signingIn === false) {
-        throw new Error("Nieprawidłowy login lub hasło");
-      }
-
+      await signIn({ email: identifier.trim(), password });
       await new Promise((resolve) => setTimeout(resolve, 250));
       navigate(redirectTarget, { replace: true });
     } catch (_submitError) {
@@ -146,48 +134,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const handleOtpEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const email = otpEmail.trim();
-      await signIn("email-otp", { email });
-      setOtpEmail(email);
-      setStep("otpCode");
-      setIsLoading(false);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Nie udało się wysłać kodu");
-      setIsLoading(false);
-    }
-  };
-
-  const handleOtpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await signIn("email-otp", { email: otpEmail, code: otp });
-      if (!result || result.signingIn === false) {
-        throw new Error("Podany kod weryfikacyjny jest nieprawidłowy");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      navigate(redirectTarget, { replace: true });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Podany kod weryfikacyjny jest nieprawidłowy");
-      setIsLoading(false);
-      setOtp("");
-    }
-  };
-
-  const eyebrow = step === "password" ? "Hasło" : step === "otpEmail" || step === "otpCode" ? "Kod Email" : "Logowanie";
-  const title = step === "password" ? "Podaj hasło" : step === "otpEmail" ? "Kod logowania" : step === "otpCode" ? "Potwierdź kod" : "Zaloguj się";
-  const description =
-    step === "password"
-      ? identifier
-      : step === "otpCode"
-        ? `Kod wysłany na ${otpEmail}`
-        : "Wpisz email lub nazwę użytkownika.";
+  const eyebrow = step === "password" ? "Hasło" : "Logowanie";
+  const title = step === "password" ? "Podaj hasło" : "Zaloguj się";
+  const description = step === "password" ? identifier : "Wpisz email użytkownika.";
 
   return (
     <LoginLayout>
@@ -200,8 +149,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <Input
                   value={identifier}
                   onChange={(event) => setIdentifier(event.target.value)}
-                  placeholder="Email lub nazwa użytkownika"
-                  type="text"
+                  placeholder="Email użytkownika"
+                  type="email"
                   autoComplete="username"
                   autoFocus
                   className={inputClass}
@@ -210,7 +159,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 />
               </div>
               <div className="rounded-[1rem] border border-white/10 bg-black/18 px-4 py-3 text-sm text-white/72">
-                Login działa po adresie email albo nazwie użytkownika.
+                Login działa po adresie email.
               </div>
               <Button type="submit" disabled={isLoading} className={`w-full ${primaryButtonClass}`}>
                 <Loader2 className={`mr-2 h-4 w-4 animate-spin ${isLoading ? "inline-block" : "hidden"}`} />
@@ -220,19 +169,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               </Button>
             </div>
             <ErrorMessage message={error} />
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setStep("otpEmail");
-              }}
-              className="mt-5 text-sm font-semibold text-amber-100/82 transition-colors hover:text-white"
-            >
-              Mam problem z hasłem, zaloguj kodem email
-            </button>
           </form>
         </LoginPanel>
-      ) : step === "password" ? (
+      ) : (
         <LoginPanel eyebrow={eyebrow} title={title} description={description}>
           <form onSubmit={handlePasswordSubmit}>
             <div className="space-y-4">
@@ -257,7 +196,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <div className="rounded-[1rem] border border-white/10 bg-black/18 px-4 py-3 text-sm text-white/72">
                 <div className="flex items-center gap-2">
                   <LockKeyhole className="h-4 w-4 text-amber-200" />
-                  <span>Hasło jest sprawdzane bez ujawniania, czy konto istnieje w systemie.</span>
+                  <span>Hasło jest sprawdzane na serwerze.</span>
                 </div>
               </div>
             </div>
@@ -285,83 +224,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <span className={isLoading ? "hidden" : "inline-block"}>Zaloguj</span>
                 <span className={isLoading ? "inline-block" : "hidden"}>Logowanie...</span>
                 <ArrowRight className={`ml-2 h-4 w-4 ${!isLoading ? "inline-block" : "hidden"}`} />
-              </Button>
-            </div>
-          </form>
-        </LoginPanel>
-      ) : step === "otpEmail" ? (
-        <LoginPanel eyebrow={eyebrow} title={title} description="Wyślemy jednorazowy kod na email przypisany do konta.">
-          <form onSubmit={handleOtpEmailSubmit}>
-            <div className="space-y-4">
-              <div className="relative">
-                <Mail className="absolute left-4 top-4 h-4 w-4 text-white/42" />
-                <Input
-                  value={otpEmail}
-                  onChange={(event) => setOtpEmail(event.target.value)}
-                  placeholder="name@example.com"
-                  type="email"
-                  autoFocus
-                  disabled={isLoading}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-            <ErrorMessage message={error} />
-            <div className="mt-4 flex gap-2">
-              <Button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setStep("identifier");
-                }}
-                disabled={isLoading}
-                className={`flex-1 ${secondaryButtonClass}`}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Wstecz
-              </Button>
-              <Button type="submit" className={`flex-1 ${primaryButtonClass}`} disabled={isLoading || otpEmail.trim().length === 0}>
-                <Loader2 className={`mr-2 h-4 w-4 animate-spin ${isLoading ? "inline-block" : "hidden"}`} />
-                <span className={isLoading ? "hidden" : "inline-block"}>Wyślij kod</span>
-                <span className={isLoading ? "inline-block" : "hidden"}>Wysyłanie...</span>
-              </Button>
-            </div>
-          </form>
-        </LoginPanel>
-      ) : (
-        <LoginPanel eyebrow={eyebrow} title={title} description={description}>
-          <form onSubmit={handleOtpSubmit}>
-            <div className="space-y-4">
-              <Input
-                value={otp}
-                onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                autoFocus
-                disabled={isLoading}
-                className="h-16 rounded-[1rem] border border-white/10 bg-white/6 text-center text-2xl font-bold tracking-[0.45em] text-white placeholder:text-white/20"
-              />
-            </div>
-            <ErrorMessage message={error} />
-            <div className="mt-4 flex gap-2">
-              <Button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setStep("otpEmail");
-                }}
-                disabled={isLoading}
-                className={`flex-1 ${secondaryButtonClass}`}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Wstecz
-              </Button>
-              <Button type="submit" className={`flex-1 ${primaryButtonClass}`} disabled={isLoading || otp.length !== 6}>
-                <Loader2 className={`mr-2 h-4 w-4 animate-spin ${isLoading ? "inline-block" : "hidden"}`} />
-                <span className={isLoading ? "hidden" : "inline-block"}>Potwierdź</span>
-                <span className={isLoading ? "inline-block" : "hidden"}>Sprawdzanie...</span>
               </Button>
             </div>
           </form>

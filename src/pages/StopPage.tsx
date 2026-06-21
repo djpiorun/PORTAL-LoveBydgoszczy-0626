@@ -1,12 +1,12 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ArrowLeft, Clock, MapPin } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion } from "framer-motion";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 export default function StopPage() {
   const { stopId } = useParams();
@@ -15,13 +15,76 @@ export default function StopPage() {
   const isMobile = useIsMobile();
   const selectedRoute = location.state?.selectedRoute;
   const [activeTab, setActiveTab] = useState<"nearest" | "full">("nearest");
-
-  const stop = useQuery(api.gtfs.getStop, stopId ? { stop_id: stopId } : "skip");
-  const stopDepartures = useQuery(api.gtfs.getStopDepartures, stopId ? { stop_id: stopId } : "skip");
+  const [stop, setStop] = useState<any | null | undefined>(undefined);
+  const [stopDepartures, setStopDepartures] = useState<any | null | undefined>(undefined);
+  const [activeServices, setActiveServices] = useState<string[] | undefined>(undefined);
 
   const today = new Date();
   const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-  const activeServices = useQuery(api.gtfs.getActiveServices, { date: dateStr });
+
+  useEffect(() => {
+    if (!stopId) {
+      setStop(null);
+      setStopDepartures(null);
+      return;
+    }
+    let active = true;
+    setStop(undefined);
+    setStopDepartures(undefined);
+
+    apiFetch<any>(`/gtfs/stops/${stopId}`)
+      .then((payload) => {
+        if (!active) return;
+        setStop(payload?.data ?? payload?.stop ?? payload ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStop(null);
+        toast.warning("Nie udało się pobrać przystanku.");
+      });
+
+    apiFetch<any>(`/gtfs/stops/${stopId}/departures`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.stopDepartures ?? payload;
+        if (data && Array.isArray((data as any).departures)) {
+          setStopDepartures(data);
+          return;
+        }
+        if (Array.isArray(data)) {
+          setStopDepartures({ departures: data });
+          return;
+        }
+        setStopDepartures(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStopDepartures(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [stopId]);
+
+  useEffect(() => {
+    let active = true;
+    setActiveServices(undefined);
+    apiFetch<any>(`/gtfs/active-services?date=${dateStr}`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.services ?? payload ?? [];
+        setActiveServices(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setActiveServices([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [dateStr]);
 
   const departures = useMemo(() => {
     if (!stopDepartures || !activeServices) return [];

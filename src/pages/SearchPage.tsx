@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { getArticleHref } from "@/lib/articleRouting";
+import { fetchArticles, type Article } from "@/lib/articles-api";
 import ArticleCard from "@/components/ArticleCard";
 import EventCard from "@/components/EventCard";
 import { Search as SearchIcon, History, X, ArrowLeft, Clock, FileText, CalendarDays } from "lucide-react";
@@ -20,6 +21,10 @@ function MobileSearchPage() {
   const query = searchParams.get("q") || "";
   const [searchInput, setSearchInput] = useState(query);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [isLoadingArticles, setIsLoadingArticles] = useState(false);
+  const [events, setEvents] = useState<any[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
 
   useEffect(() => {
     setSearchInput(query);
@@ -29,6 +34,36 @@ function MobileSearchPage() {
     const history = JSON.parse(localStorage.getItem("searchHistory") || "[]");
     setSearchHistory(history);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!query) {
+      setArticles([]);
+      setIsLoadingArticles(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoadingArticles(true);
+    fetchArticles({ search: query, limit: 20 })
+      .then((data) => {
+        if (!isMounted) return;
+        setArticles(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setArticles([]);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoadingArticles(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [query]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,11 +80,41 @@ function MobileSearchPage() {
     localStorage.setItem("searchHistory", JSON.stringify(next));
   };
 
-  const articles = useQuery(api.articles.search, query ? { query } : "skip");
-  const events = useQuery(api.events.search, query ? { query } : "skip");
+  useEffect(() => {
+    let isMounted = true;
 
-  const isLoading = !!query && (articles === undefined || events === undefined);
-  const hasResults = (articles?.length || 0) > 0 || (events?.length || 0) > 0;
+    if (!query) {
+      setEvents([]);
+      setIsLoadingEvents(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoadingEvents(true);
+    apiFetch<any>(`/events?search=${encodeURIComponent(query)}`)
+      .then((payload) => {
+        if (!isMounted) return;
+        const data = payload?.data ?? payload?.events ?? payload ?? [];
+        setEvents(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setEvents([]);
+        toast.warning("Wydarzenia są chwilowo niedostępne.");
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoadingEvents(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [query]);
+
+  const isLoading = !!query && (isLoadingArticles || isLoadingEvents);
+  const hasResults = articles.length > 0 || events.length > 0;
 
   function timeAgo(ts?: number) {
     if (!ts) return "";
@@ -210,28 +275,28 @@ function MobileSearchPage() {
                     <div className="space-y-3">
                       {articles.map((article, i) => (
                         <motion.button
-                          key={article._id}
+                          key={article.id}
                           type="button"
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.22, delay: i * 0.04 }}
-                          onClick={() => navigate(getArticleHref(article as any))}
+                          onClick={() => navigate(getArticleHref(article))}
                           className="flex w-full items-start gap-3 rounded-[1.4rem] border border-border/30 bg-card p-3 text-left shadow-sm active:scale-[0.985] transition-transform duration-150"
                         >
-                          {(article as any).imageUrl && (
+                          {article.imageUrl && (
                             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem]">
-                              <img src={(article as any).imageUrl} alt={article.title} className="h-full w-full object-cover" />
+                              <img src={article.imageUrl} alt={article.title} className="h-full w-full object-cover" />
                             </div>
                           )}
                           <div className="min-w-0 flex-1 pt-0.5">
                             <h3 className="line-clamp-2 text-[13px] font-bold leading-snug text-foreground">{article.title}</h3>
                             <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-foreground/45">
                               <Clock className="h-2.5 w-2.5 shrink-0" />
-                              <span>{timeAgo((article as any).publishedAt)}</span>
-                              {(article as any).author && (
+                              <span>{timeAgo(article.publishedAt)}</span>
+                              {article.author && (
                                 <>
                                   <span className="opacity-40">·</span>
-                                  <span className="truncate">{(article as any).author}</span>
+                                  <span className="truncate">{article.author}</span>
                                 </>
                               )}
                             </div>
@@ -283,12 +348,46 @@ function DesktopSearchPage() {
   const query = searchParams.get("q") || "";
   const [searchInput, setSearchInput] = useState(query);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [isLoadingArticles, setIsLoadingArticles] = useState(false);
+  const [events, setEvents] = useState<any[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     const history = JSON.parse(localStorage.getItem("searchHistory") || "[]");
     setSearchHistory(history);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!query) {
+      setArticles([]);
+      setIsLoadingArticles(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoadingArticles(true);
+    fetchArticles({ search: query, limit: 20 })
+      .then((data) => {
+        if (!isMounted) return;
+        setArticles(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setArticles([]);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoadingArticles(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [query]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,11 +406,41 @@ function DesktopSearchPage() {
     localStorage.setItem("searchHistory", JSON.stringify(newHistory));
   };
 
-  const articles = useQuery(api.articles.search, query ? { query } : "skip");
-  const events = useQuery(api.events.search, query ? { query } : "skip");
+  useEffect(() => {
+    let isMounted = true;
 
-  const isLoading = query && (articles === undefined || events === undefined);
-  const hasResults = (articles?.length || 0) > 0 || (events?.length || 0) > 0;
+    if (!query) {
+      setEvents([]);
+      setIsLoadingEvents(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoadingEvents(true);
+    apiFetch<any>(`/events?search=${encodeURIComponent(query)}`)
+      .then((payload) => {
+        if (!isMounted) return;
+        const data = payload?.data ?? payload?.events ?? payload ?? [];
+        setEvents(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setEvents([]);
+        toast.warning("Wydarzenia są chwilowo niedostępne.");
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoadingEvents(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [query]);
+
+  const isLoading = !!query && (isLoadingArticles || isLoadingEvents);
+  const hasResults = articles.length > 0 || events.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -374,7 +503,7 @@ function DesktopSearchPage() {
                   {articles && articles.length > 0 && (
                     <section>
                       <h2 className="mb-5 flex items-center gap-3 font-black text-foreground text-2xl">Artykuły <span className="text-sm font-bold px-3 py-1 rounded-full bg-primary/10 text-primary">{articles.length}</span></h2>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{articles.map((article, i) => <ArticleCard key={article._id} article={article} index={i} />)}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{articles.map((article, i) => <ArticleCard key={article.id} article={article} index={i} />)}</div>
                     </section>
                   )}
                   {events && events.length > 0 && (

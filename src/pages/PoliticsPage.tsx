@@ -1,14 +1,15 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import BackToTop from "@/components/BackToTop";
 import { Building2, FileText, Users, ChevronRight, BookOpen, Scale, Landmark, Globe, Calendar } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles, type Article } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const PARTY_COLORS: Record<string, string> = {
   "Koalicja Obywatelska": "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800",
@@ -141,15 +142,65 @@ function PoliticianCover({ politician }: { politician: any }) {
 
 export default function PoliticsPage() {
   const nav = useNavigate();
-  const articles = useQuery(api.articles.list, { category: "polityka", limit: 50 });
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [allPoliticians, setAllPoliticians] = useState<any[]>([]);
+  const [heroConfig, setHeroConfig] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const resolvedArticles = useResolvedArticles(articles);
-  const allPoliticians = useQuery(api.politicians.list, {});
-  const heroConfig = useQuery(api.categoryHeroConfig.getByCategory, { categoryKey: "polityka" });
   const [partyFilter, setPartyFilter] = useState<string>("all");
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "35%"]);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const normalizeList = (payload: any) => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.results)) return payload.results;
+      return [];
+    };
+
+    const load = async () => {
+      setIsLoading(true);
+      const [articlesResult, politiciansResult, heroResult] = await Promise.allSettled([
+        fetchArticles({ category: "polityka", limit: 50 }),
+        apiFetch("/politicians"),
+        apiFetch("/category-hero-config?category_key=polityka"),
+      ]);
+
+      if (!isMounted) return;
+
+      if (articlesResult.status === "fulfilled") {
+        setArticles(articlesResult.value ?? []);
+      } else {
+        setArticles([]);
+        toast.error("Nie udało się pobrać artykułów politycznych.");
+      }
+
+      if (politiciansResult.status === "fulfilled") {
+        setAllPoliticians(normalizeList(politiciansResult.value));
+      } else {
+        setAllPoliticians([]);
+        toast.error("Nie udało się pobrać listy polityków.");
+      }
+
+      if (heroResult.status === "fulfilled") {
+        setHeroConfig(normalizeList(heroResult.value));
+      } else {
+        setHeroConfig([]);
+        toast.error("Nie udało się pobrać konfiguracji hero polityki.");
+      }
+
+      setIsLoading(false);
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredArticles = resolvedArticles?.filter(a => {
     if (partyFilter === "all") return true;
@@ -165,16 +216,16 @@ export default function PoliticsPage() {
   )];
 
   const heroPoliticians = (() => {
-    if (!allPoliticians) return [];
+    if (!allPoliticians.length) return [];
     const active = allPoliticians.filter(p => p.isActive !== false);
-    if (heroConfig && heroConfig.length > 0) {
+    if (heroConfig.length > 0) {
       const visibleConfig = heroConfig.filter(c => c.isVisible).sort((a, b) => a.order - b.order);
       return visibleConfig.map(c => active.find(p => p._id === c.itemId)).filter(Boolean);
     }
     return active.slice(0, 8);
   })();
 
-  if (resolvedArticles === undefined) return <PoliticsSkeleton />;
+  if (isLoading && articles.length === 0) return <PoliticsSkeleton />;
 
   const featuredArticles = filteredArticles?.filter(a => a.featured) || [];
   const regularArticles = filteredArticles?.filter(a => !a.featured) || [];

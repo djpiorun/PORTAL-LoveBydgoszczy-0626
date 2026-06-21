@@ -1,53 +1,78 @@
-import { useEffect, useState } from "react";
-import { api } from "@/convex/_generated/api";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useCallback, useEffect, useState } from "react";
+
+import { apiFetch, clearAuthToken, getAuthToken, setAuthToken } from "@/lib/api-client";
+
+export type AuthUser = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  image?: string | null;
+};
+
+type AuthResponse = {
+  user: AuthUser;
+  token?: string;
+};
 
 export function useAuth() {
-  const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
-  const user = useQuery(api.users.currentUser);
-  const ensureCurrentUserProfile = useMutation(api.users.ensureCurrentUserProfile);
-  const { signIn, signOut } = useAuthActions();
-  const [isSyncingProfile, setIsSyncingProfile] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!isAuthenticated) {
-      setIsSyncingProfile(false);
+  const fetchCurrentUser = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setUser(null);
+      setIsLoading(false);
       return;
     }
 
-    if (
-      !isAuthLoading &&
-      user &&
-      !user.isAnonymous &&
-      (!user.role || !user.slug || !user.name)
-    ) {
-      setIsSyncingProfile(true);
-      ensureCurrentUserProfile()
-        .catch((error) => {
-          console.error("Failed to ensure current user profile:", error);
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setIsSyncingProfile(false);
-          }
-        });
-      return () => {
-        cancelled = true;
-      };
+    try {
+      const response = await apiFetch<{ user: AuthUser }>("/auth/me", {
+        method: "GET",
+      });
+      setUser(response.user);
+    } catch (error) {
+      console.error("Failed to load current user:", error);
+      clearAuthToken();
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCurrentUser();
+  }, [fetchCurrentUser]);
+
+  const signIn = async (credentials: { email: string; password: string }) => {
+    const response = await apiFetch<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: credentials,
+    });
+
+    if (response.token) {
+      setAuthToken(response.token);
     }
 
-    setIsSyncingProfile(false);
-  }, [ensureCurrentUserProfile, isAuthLoading, isAuthenticated, user]);
+    setUser(response.user);
+    return response.user;
+  };
 
-  // Derive isLoading directly from the dependencies instead of managing separate state
-  const isLoading = isAuthLoading || user === undefined || isSyncingProfile;
+  const signOut = async () => {
+    try {
+      await apiFetch<null>("/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error("Failed to log out:", error);
+    } finally {
+      clearAuthToken();
+      setUser(null);
+    }
+  };
 
   return {
     isLoading,
-    isAuthenticated,
+    isAuthenticated: Boolean(user),
     user,
     signIn,
     signOut,

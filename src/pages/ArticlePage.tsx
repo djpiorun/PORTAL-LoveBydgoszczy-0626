@@ -1,7 +1,4 @@
 import { useParams, Link, useNavigate } from "react-router";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SEO from "@/components/SEO";
@@ -35,6 +32,7 @@ import {
 import { useEffect, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getArticleHref, getCategoryHref } from "@/lib/articleRouting";
+import { useArticleLookup, useArticleUpdates } from "@/hooks/use-articles-api";
 
 // AgeGate overlay component
 function AgeGate({ onConfirm }: { onConfirm: () => void }) {
@@ -184,6 +182,58 @@ function formatDateTime(ts: number) {
     minute: "2-digit",
     timeZone: "Europe/Warsaw",
   });
+}
+
+function toTimestamp(value: any) {
+  if (!value) return value;
+  if (typeof value === "string") {
+    const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
+    const time = Date.parse(normalized);
+    return Number.isNaN(time) ? value : time;
+  }
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? value : time;
+}
+
+function normalizeArticleResponse(payload: any) {
+  const data = payload?.data ?? payload;
+  if (!data) return null;
+
+  return {
+    ...data,
+    imageUrl: data.image_url ?? data.imageUrl,
+    imageAuthor: data.image_author ?? data.imageAuthor,
+    publishedAt: toTimestamp(data.published_at ?? data.publishedAt),
+    updatedAt: toTimestamp(data.updated_at ?? data.updatedAt),
+    isPatronage: data.is_patronage ?? data.isPatronage,
+    sourceName: data.source_name ?? data.sourceName,
+    sourceUrl: data.source_url ?? data.sourceUrl,
+    sourceFromContact: data.source_from_contact ?? data.sourceFromContact,
+    labelUrgent: data.label_urgent ?? data.labelUrgent,
+    labelImportant: data.label_important ?? data.labelImportant,
+    labelOurNews: data.label_our_news ?? data.labelOurNews,
+    labelMustKnow: data.label_must_know ?? data.labelMustKnow,
+    labelAuthorArticle: data.label_author_article ?? data.labelAuthorArticle,
+    label18Plus: data.label_18_plus ?? data.label18Plus,
+    labelDepresja: data.label_depresja ?? data.labelDepresja,
+    labelBeingUpdated: data.label_being_updated ?? data.labelBeingUpdated,
+    personName: data.person_name ?? data.personName,
+    articleType: data.article_type ?? data.articleType,
+    articleTemplate: data.article_template ?? data.articleTemplate,
+    partnerName: data.partner_name ?? data.partnerName,
+    partnerUrl: data.partner_url ?? data.partnerUrl,
+    partnerLogoUrl: data.partner_logo_url ?? data.partnerLogoUrl,
+    partnerLabel: data.partner_label ?? data.partnerLabel,
+    seoTitle: data.seo_title ?? data.seoTitle,
+    seoDescription: data.seo_description ?? data.seoDescription,
+    allowComments: data.allow_comments ?? data.allowComments,
+    showUpdates: data.show_updates ?? data.showUpdates,
+    graphicsLayout: data.graphics_layout ?? data.graphicsLayout,
+    categoryLayout: data.category_layout ?? data.categoryLayout,
+    articleElements: data.article_elements ?? data.articleElements,
+    authorFooterStyle: data.author_footer_style ?? data.authorFooterStyle,
+    ourActions: data.our_actions ?? data.ourActions,
+  };
 }
 
 function ImageCredit({ credit }: { credit?: string }) {
@@ -993,7 +1043,7 @@ function ArticleContentWithEmbeds({ article }: { article: any }) {
     <div className="text-foreground leading-relaxed article-content">
       {segments.map((segment, index) => {
         if (segment.type === "poll" && poll?.enabled) {
-          return <ArticlePoll key={`poll-${index}`} articleId={article._id} poll={poll} />;
+          return <ArticlePoll key={`poll-${index}`} articleId={article.id} poll={poll} />;
         }
 
         if (!segment.value) return null;
@@ -1001,7 +1051,7 @@ function ArticleContentWithEmbeds({ article }: { article: any }) {
       })}
 
       {!shortcodeUsed && poll?.enabled && poll.showBelowArticleWhenNoShortcode && (
-        <ArticlePoll articleId={article._id} poll={poll} />
+        <ArticlePoll articleId={article.id} poll={poll} />
       )}
     </div>
   );
@@ -1215,7 +1265,7 @@ function renderElement(
               <span className="text-sm font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">{commentCount}</span>
             )}
           </h3>
-          <Comments targetId={article._id} targetType="article" />
+          <Comments targetId={article.id} targetType="article" />
         </motion.div>
       ) : null;
 
@@ -1271,7 +1321,7 @@ function renderElement(
                 const timeLabel = new Date(upd.publishedAt).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" });
                 const dateLabel = new Date(upd.publishedAt).toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Warsaw" });
                 return (
-                  <div key={upd._id} className="relative pl-6">
+                  <div key={upd.id} className="relative pl-6">
                     {/* Timeline dot */}
                     <div className={`absolute left-[-4px] top-3 h-3 w-3 rounded-full border-2 border-background ${index === 0 ? "bg-primary" : "bg-muted-foreground/30"}`} />
                     <div className={`rounded-2xl border px-4 py-3 shadow-sm ${index === 0 ? "border-primary/20 bg-white" : "border-border bg-white/90"}`}>
@@ -1506,6 +1556,134 @@ function useNewsArticleJsonLd(article: any, canonicalHref: string | null) {
   }, [article, canonicalHref]);
 }
 
+export function RestArticlePage({ article }: { article: any }) {
+  const isMobile = useIsMobile();
+  const normalized = normalizeArticleResponse(article) ?? article;
+  const publishedValue =
+    normalized.publishedAt ?? toTimestamp(normalized.published_at ?? normalized.publishedAt);
+  const publishedLabel =
+    typeof publishedValue === "number" ? formatDateTime(publishedValue) : (normalized.published_at ?? normalized.publishedAt);
+  const publishedDateLabel =
+    typeof publishedValue === "number" ? formatDate(publishedValue) : undefined;
+  const publishedTimeLabel =
+    typeof publishedValue === "number"
+      ? new Date(publishedValue).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" })
+      : undefined;
+  const canonicalHref = normalized.slug ? `/${normalized.slug}` : undefined;
+  const authorName = normalized.author ?? "";
+  const authorDisplayName = authorName || "Redakcja Love Bydgoszcz";
+  const authorBio = normalized.authorBio ?? normalized.author_bio;
+  const footerStyle = (normalized.authorFooterStyle ?? normalized.author_footer_style ?? "classic") as
+    | "graphic"
+    | "business"
+    | "none"
+    | "default"
+    | "classic";
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <SEO
+        title={normalized.seoTitle || normalized.seo_title || normalized.title}
+        description={normalized.seoDescription || normalized.seo_description || normalized.excerpt}
+        image={normalized.imageUrl || normalized.image_url}
+        canonicalUrl={canonicalHref}
+        url={canonicalHref}
+        ogTitle={normalized.seoTitle || normalized.seo_title || normalized.title}
+        ogDescription={normalized.seoDescription || normalized.seo_description || normalized.excerpt}
+        ogImage={normalized.imageUrl || normalized.image_url}
+      />
+      {isMobile ? null : <Navbar />}
+      <main className={`flex-1 ${isMobile ? "pt-4" : "pt-24"} pb-16 bg-background`}>
+        <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-foreground tracking-tight">
+              {normalized.title}
+            </h1>
+          </div>
+
+          <div className="mb-6 rounded-2xl border border-border/60 bg-background/95 px-5 py-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <User className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Autor</p>
+                  <p className="text-base font-bold text-foreground">{authorDisplayName}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                {publishedDateLabel ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-muted/30 px-3 py-1 text-[11px] font-semibold">
+                    <Calendar className="h-3.5 w-3.5 text-primary" />
+                    {publishedDateLabel}
+                  </span>
+                ) : null}
+                {publishedTimeLabel ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-muted/30 px-3 py-1 text-[11px] font-semibold">
+                    <Clock className="h-3.5 w-3.5 text-primary" />
+                    {publishedTimeLabel}
+                  </span>
+                ) : publishedLabel ? (
+                  <span className="text-xs font-medium">{publishedLabel}</span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {normalized.imageUrl || normalized.image_url ? (
+            <div className="mb-6">
+              <InteractiveArticleImage
+                imageUrl={normalized.imageUrl || normalized.image_url}
+                title={normalized.title}
+                className="w-full rounded-2xl overflow-hidden shadow-md"
+              />
+              <ImageCredit credit={normalized.imageAuthor || normalized.image_author} />
+            </div>
+          ) : null}
+
+          {normalized.excerpt && (
+            <div className="mb-6 rounded-2xl border border-border/60 bg-muted/20 px-5 py-5">
+              <p className="text-base sm:text-lg font-medium leading-relaxed text-foreground/80">
+                {normalized.excerpt}
+              </p>
+            </div>
+          )}
+
+          <div
+            className="prose prose-lg dark:prose-invert max-w-none text-foreground leading-relaxed article-content"
+            dangerouslySetInnerHTML={{ __html: normalized.content || normalized.content_html || "" }}
+          />
+
+          {(authorName || authorBio) && (
+            <div className="mt-10 space-y-4">
+              {authorBio && (
+                <div className="rounded-2xl border border-border/60 bg-card/80 px-5 py-5 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">O autorze</p>
+                      <p className="text-base font-bold text-foreground">{authorDisplayName}</p>
+                    </div>
+                  </div>
+                  <div
+                    className="article-content prose prose-sm mt-3 max-w-none text-muted-foreground"
+                    dangerouslySetInnerHTML={{ __html: authorBio }}
+                  />
+                </div>
+              )}
+              {authorName && <AuthorFooterCard authorName={authorName} style={footerStyle} />}
+            </div>
+          )}
+        </article>
+      </main>
+      {isMobile ? null : <Footer />}
+    </div>
+  );
+}
+
 export default function ArticlePage() {
   const params = useParams<{ id?: string, slug?: string }>();
   const id = params.id || params.slug;
@@ -1535,23 +1713,18 @@ export default function ArticlePage() {
     await navigator.clipboard.writeText(url);
   };
 
-  const isValidId = id ? /^[a-zA-Z0-9]{15,30}$/.test(id) && !id.includes("-") && !id.includes("_") : false;
-  const articleById = useQuery(api.articles.get, isValidId && id ? { id: id as Id<"articles"> } : "skip");
-  const articleBySlug = useQuery(api.articles.getBySlug, id ? { slug: id } : "skip");
-  const article = (isValidId ? articleById : null) ?? articleBySlug;
-  const updates = useQuery(
-    api.articles.getUpdates,
-    article?._id ? { articleId: article._id as Id<"articles"> } : "skip"
-  );
-  const commentCount = useQuery(
-    api.comments.countByTarget,
-    article?._id ? { targetId: article._id, targetType: "article" } : "skip"
-  );
-  const canonicalHref = article ? getArticleHref(article) : null;
+  const isValidId = id ? /^[a-zA-Z0-9]{15,40}$/.test(id) && !id.includes("-") && !id.includes("_") : false;
+  const { article, isLoading: isArticleLoading } = useArticleLookup({
+    id: isValidId ? id : null,
+    slug: !isValidId ? id : null,
+  });
+  const updates = useArticleUpdates(article?.id ?? null) ?? [];
+  const commentCount: number = 0;
+  const canonicalHref = article ? getArticleHref(article as any) : null;
 
   if (!id) return <NotFound />;
 
-  if (article === undefined) {
+  if (isArticleLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         {isMobile ? null : <Navbar />}
@@ -1662,12 +1835,12 @@ export default function ArticlePage() {
         <SEO
           title={article.seoTitle || article.title}
           description={article.seoDescription || article.excerpt}
-          image={article.imageUrl}
+          image={article.imageUrl ?? undefined}
           canonicalUrl={canonicalHref ?? undefined}
           url={canonicalHref ?? undefined}
           ogTitle={article.seoTitle || article.title}
           ogDescription={article.seoDescription || article.excerpt}
-          ogImage={article.imageUrl}
+          ogImage={article.imageUrl ?? undefined}
         />
 
         <main className="pt-[calc(4.8rem+env(safe-area-inset-top,0px))] pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
@@ -1884,12 +2057,12 @@ export default function ArticlePage() {
       <SEO
         title={article.seoTitle || article.title}
         description={article.seoDescription || article.excerpt}
-        image={article.imageUrl}
+        image={article.imageUrl ?? undefined}
         canonicalUrl={canonicalHref ?? undefined}
         url={canonicalHref ?? undefined}
         ogTitle={article.seoTitle || article.title}
         ogDescription={article.seoDescription || article.excerpt}
-        ogImage={article.imageUrl}
+        ogImage={article.imageUrl ?? undefined}
       />
       {isMobile ? null : <Navbar />}
 

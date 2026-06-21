@@ -1,8 +1,8 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Link } from "react-router";
 import { motion } from "framer-motion";
 import { User, Facebook, Instagram, Twitter, Globe, Mail, Phone } from "lucide-react";
+
+import { useAuthorLookup } from "@/hooks/use-authors-api";
 
 interface AuthorFooterCardProps {
   authorName: string;
@@ -14,8 +14,8 @@ interface AuthorFooterCardProps {
 
 // ─── STOPKA WIZYTÓWKOWA ───────────────────────────────────────────────────────
 export function AuthorFooterCardBusiness({ authorName }: { authorName: string }) {
-  const author = useQuery(api.users.getBySlugOrName, { identifier: authorName });
-  if (author === undefined) return null;
+  const { author, isLoading } = useAuthorLookup(authorName);
+  if (isLoading) return null;
 
   const authorSlug = author?.slug || authorName.toLowerCase().replace(/\s+/g, "-");
   const displayName = author?.name || authorName;
@@ -67,7 +67,7 @@ export function AuthorFooterCardBusiness({ authorName }: { authorName: string })
 
 // ─── SINGLE AUTHOR SLOT (graphic style — dark card, overflowing photo) ──
 function SingleAuthorSlot({ authorName }: { authorName: string }) {
-  const author = useQuery(api.users.getBySlugOrName, { identifier: authorName });
+  const { author } = useAuthorLookup(authorName);
 
   const authorSlug = author?.slug || authorName.toLowerCase().replace(/\s+/g, "-");
   const displayName = author?.name || authorName;
@@ -255,7 +255,8 @@ function ClassicFooter({
 }
 
 function ClassicAuthorSlot({ authorName, authorSlug }: { authorName: string; authorSlug: string }) {
-  const author = useQuery(api.users.getBySlugOrName, { identifier: authorName });
+  const { author, isLoading } = useAuthorLookup(authorName);
+  if (isLoading) return null;
   const displayName = author?.name || authorName;
   const slug = author?.slug || authorSlug;
 

@@ -1,15 +1,15 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import BackToTop from "@/components/BackToTop";
 import ArticleCard from "@/components/ArticleCard";
 import { Heart, Users, Megaphone, Handshake, Target, TrendingUp, ChevronRight, ChevronLeft, Star, Sparkles } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useState, useRef } from "react";
 import { useNavigate } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const ACTION_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: React.ElementType }> = {
   akcja: { label: "Akcja", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 border-rose-200 dark:bg-rose-950/30 dark:border-rose-800", Icon: Target },
@@ -100,13 +100,31 @@ function OurActionsCard({ article, index }: { article: any; index: number }) {
 
 export default function OurActionsPage() {
   const nav = useNavigate();
-  const articles = useQuery(api.articles.list, { category: "nasze_dzialania", limit: 50 });
+  const [articles, setArticles] = useState<any[] | undefined>(undefined);
   const resolvedArticles = useResolvedArticles(articles);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "40%"]);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+
+  useEffect(() => {
+    let active = true;
+    fetchArticles({ category: "nasze_dzialania", limit: 50 })
+      .then((items) => {
+        if (!active) return;
+        setArticles(items);
+      })
+      .catch(() => {
+        if (!active) return;
+        setArticles([]);
+        toast.warning("Nie udało się pobrać działań.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredArticles = resolvedArticles?.filter(a => typeFilter === "all" || (a as any).ourActions?.actionType === typeFilter);
 

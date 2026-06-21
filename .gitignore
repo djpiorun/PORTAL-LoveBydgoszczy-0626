@@ -1,0 +1,27 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+
+# Laravel backend
+/backend/vendor/
+/backend/.env
+/backend/storage/
+/backend/bootstrap/cache/
+/backend/.phpunit.result.cache
+/backend/laravel/vendor/
+/backend/laravel/.env
+/backend/laravel/storage/
+/backend/laravel/bootstrap/cache/
+/backend/laravel/.phpunit.result.cache
+
+# Composer helper
+/tools/composer
+/tools/composer.phar
+/tools/composer-setup.php
+
+# Misc
+.DS_Store
+.idea/
+.vscode/

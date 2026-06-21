@@ -1,7 +1,7 @@
-import { useMemo } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 interface PartnerLogosStripProps {
   title?: string;
@@ -9,15 +9,47 @@ interface PartnerLogosStripProps {
   maxItems?: number;
 }
 
+const normalizePartner = (partner: any) => ({
+  _id: String(partner?.id ?? partner?._id ?? ""),
+  name: partner?.name ?? "",
+  logoUrl: partner?.logoUrl ?? partner?.logo_url ?? partner?.logo ?? null,
+  website: partner?.website ?? partner?.website_url ?? null,
+});
+
+const normalizePartnersPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.partners ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizePartner) : [];
+};
+
 export default function PartnerLogosStrip({ title = "Partnerzy portalu", className = "", maxItems = 8 }: PartnerLogosStripProps) {
-  const partners = useQuery(api.ads.getPartnerLogos, { limit: maxItems });
+  const [partners, setPartners] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadPartners = async () => {
+      try {
+        const payload = await apiFetch(`/ads/partners?limit=${maxItems}`);
+        if (!active) return;
+        setPartners(normalizePartnersPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setPartners([]);
+        toast.warning("Partnerzy są chwilowo niedostępni.");
+      }
+    };
+
+    loadPartners();
+    return () => {
+      active = false;
+    };
+  }, [maxItems]);
 
   const marqueePartners = useMemo(() => {
     if (!partners || partners.length === 0) return [];
     return [...partners, ...partners];
   }, [partners]);
 
-  if (partners === undefined) return null;
+  if (partners === null) return null;
   if (partners.length === 0) return null;
 
   return (

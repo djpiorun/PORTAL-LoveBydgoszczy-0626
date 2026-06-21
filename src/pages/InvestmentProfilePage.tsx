@@ -1,5 +1,4 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useParams, Link, useNavigate } from "react-router";
@@ -7,6 +6,9 @@ import { motion } from "framer-motion";
 import { HardHat, MapPin, Calendar, ChevronLeft, FileText, Building2, Activity, CheckCircle2, Clock, AlertCircle, BarChart3, Wrench, ArrowRight, TrendingUp } from "lucide-react";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const STATUS_CONFIG = {
   planowana: {
@@ -47,12 +49,77 @@ const STATUS_CONFIG = {
   },
 };
 
+const normalizeInvestment = (investment: any) => ({
+  _id: String(investment?.id ?? investment?._id ?? ""),
+  slug: investment?.slug ?? "",
+  projectName: investment?.projectName ?? investment?.project_name ?? "",
+  description: investment?.description ?? "",
+  projectStatus: investment?.projectStatus ?? investment?.project_status ?? "planowana",
+  mainImageUrl: investment?.mainImageUrl ?? investment?.main_image_url ?? null,
+  progressPercent: investment?.progressPercent ?? investment?.progress_percent ?? undefined,
+  investor: investment?.investor ?? null,
+  contractor: investment?.contractor ?? null,
+  budget: investment?.budget ?? null,
+  location: investment?.location ?? null,
+  startDate: investment?.startDate ?? investment?.start_date ?? null,
+  endDate: investment?.endDate ?? investment?.end_date ?? null,
+  timeline: investment?.timeline ?? [],
+  isActive: investment?.isActive ?? investment?.is_active ?? true,
+});
+
+const normalizeInvestmentPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.investment ?? payload;
+  return data ? normalizeInvestment(data) : null;
+};
+
 export default function InvestmentProfilePage() {
   const { slug } = useParams<{ slug: string }>();
   const nav = useNavigate();
-  const investment = useQuery(api.investments.get, slug ? { slug } : "skip");
-  const allArticles = useQuery(api.articles.list, { category: "inwestycje", limit: 100 });
+  const [investment, setInvestment] = useState<any | null | undefined>(undefined);
+  const [allArticles, setAllArticles] = useState<any[] | undefined>(undefined);
   const resolvedArticles = useResolvedArticles(allArticles);
+
+  useEffect(() => {
+    if (!slug) {
+      setInvestment(null);
+      return;
+    }
+    let active = true;
+    setInvestment(undefined);
+    apiFetch(`/investments/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const normalized = normalizeInvestmentPayload(payload);
+        setInvestment(normalized && normalized._id ? normalized : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setInvestment(null);
+        toast.warning("Inwestycja jest chwilowo niedostępna.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    let active = true;
+    fetchArticles({ category: "inwestycje", limit: 100 })
+      .then((articles) => {
+        if (!active) return;
+        setAllArticles(articles);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllArticles([]);
+        toast.warning("Nie udało się pobrać artykułów inwestycyjnych.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const relatedArticles = resolvedArticles?.filter(a => {
     const inv = (a as any).investment;

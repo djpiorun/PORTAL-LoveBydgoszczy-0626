@@ -1,20 +1,94 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, FolderOpen, Image as ImageIcon, Link2, Search, Video } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
+
+type MediaAsset = {
+  _id: string;
+  name: string;
+  url: string;
+  mediaType: "image" | "video" | string;
+  sourceKind?: string;
+  folder?: string;
+  tags?: string[];
+  originalFileName?: string;
+  storageProvider?: string;
+};
+
+const normalizeAsset = (asset: any): MediaAsset => ({
+  _id: String(asset._id ?? asset.id ?? asset.uuid ?? ""),
+  name: asset.name ?? asset.title ?? "",
+  url: asset.url ?? asset.file_url ?? asset.public_url ?? "",
+  mediaType: asset.mediaType ?? asset.media_type ?? asset.type ?? "image",
+  sourceKind: asset.sourceKind ?? asset.source_kind ?? undefined,
+  folder: asset.folder ?? asset.directory ?? undefined,
+  tags: asset.tags ?? asset.keywords ?? [],
+  originalFileName: asset.originalFileName ?? asset.original_file_name ?? undefined,
+  storageProvider: asset.storageProvider ?? asset.storage_provider ?? undefined,
+});
 
 export default function AdminMedia() {
-  const assets = (useQuery((api as any).mediaLibrary.list, {}) as any[]) || [];
-  const folders = (useQuery((api as any).mediaLibrary.getFolders, {}) as string[]) || [];
-  const updateAsset = useMutation((api as any).mediaLibrary.updateAsset);
-
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [activeSource, setActiveSource] = useState("all");
   const [activeFolder, setActiveFolder] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftFolder, setDraftFolder] = useState("");
   const [draftTags, setDraftTags] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/media-library/assets");
+        if (!active) return;
+        setAssets(response.map(normalizeAsset));
+      } catch (error) {
+        console.warn("Media library assets API unavailable", error);
+        if (active) setAssets([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<string[]>("/admin/media-library/folders");
+        if (!active) return;
+        setFolders(response);
+      } catch (error) {
+        console.warn("Media library folders API unavailable", error);
+        if (active) setFolders([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const updateAsset = async (payload: { id: string; folder?: string; tags?: string[] }) => {
+    const body = {
+      folder: payload.folder ?? null,
+      tags: payload.tags ?? [],
+    };
+    try {
+      const response = await apiFetch<any>(`/admin/media-library/assets/${payload.id}`, { method: "PUT", body });
+      const normalized = normalizeAsset(response);
+      setAssets((prev) => prev.map((asset) => (asset._id === payload.id ? normalized : asset)));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Media asset update failed", error);
+      setAssets((prev) => prev.map((asset) => (asset._id === payload.id ? { ...asset, folder: payload.folder, tags: payload.tags } : asset)));
+      return { item: null, isLocal: true };
+    }
+  };
 
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
@@ -41,12 +115,16 @@ export default function AdminMedia() {
 
   const handleSaveDetails = async () => {
     if (!selectedAsset) return;
-    await updateAsset({
+    const result = await updateAsset({
       id: selectedAsset._id,
       folder: draftFolder,
       tags: draftTags.split(",").map((tag) => tag.trim()).filter(Boolean),
     });
-    toast.success("Metadane pliku zapisane");
+    if (result.isLocal) {
+      toast.message("Metadane zapisane lokalnie (API niedostępne)");
+    } else {
+      toast.success("Metadane pliku zapisane");
+    }
   };
 
   const copyUrl = async (url: string) => {

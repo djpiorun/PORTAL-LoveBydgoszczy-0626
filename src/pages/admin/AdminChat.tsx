@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useMemo, useState } from "react";
+import { fetchArticles, type Article } from "@/lib/articles-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -297,14 +296,36 @@ function OutputCard({
 }
 
 export default function AdminChat() {
-  const recentArticles = useQuery(api.articles.getLatest, { limit: 20 }) || [];
+  const [recentArticles, setRecentArticles] = useState<Article[]>([]);
+  const [articlesLoading, setArticlesLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    setArticlesLoading(true);
+    fetchArticles({ limit: 20 })
+      .then((data) => {
+        if (!isMounted) return;
+        setRecentArticles(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setRecentArticles([]);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setArticlesLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const [form, setForm] = useState<DraftForm>(DEFAULT_FORM);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const selectedArticle = useMemo(
-    () => recentArticles.find((article: any) => article._id === form.selectedArticleId),
+    () => recentArticles.find((article) => article.id === form.selectedArticleId),
     [recentArticles, form.selectedArticleId],
   );
 
@@ -419,11 +440,12 @@ export default function AdminChat() {
                 <select
                   value={form.selectedArticleId}
                   onChange={(e) => updateForm("selectedArticleId", e.target.value)}
+                  disabled={articlesLoading}
                   className="mt-3 h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none"
                 >
                   <option value="">Bez nawiazania do istniejacego artykulu</option>
-                  {recentArticles.map((article: any) => (
-                    <option key={article._id} value={article._id}>
+                  {recentArticles.map((article) => (
+                    <option key={article.id} value={article.id}>
                       {article.title}
                     </option>
                   ))}

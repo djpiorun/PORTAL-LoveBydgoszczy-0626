@@ -1,17 +1,17 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Users, ArrowRight, ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useState } from "react";
 import { getArticleHref } from "@/lib/articleRouting";
+import { useArticles } from "@/hooks/use-articles-api";
 
 export default function BydgoszczanieSlider() {
-  const articles = useQuery(api.articles.list, { category: "bydgoszczanie" as const, limit: 10 });
+  const { articles, isLoading } = useArticles({ category: "bydgoszczanie", limit: 10 });
   const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [portraitImages, setPortraitImages] = useState<Record<string, boolean>>({});
 
-  if (!articles || articles.length === 0) return null;
+  if (isLoading) return null;
+  if (articles.length === 0) return null;
 
   const nextSlide = () => {
     setCurrentIndex((prev) => (prev + 1) % articles.length);
@@ -22,7 +22,7 @@ export default function BydgoszczanieSlider() {
   };
 
   const currentArticle = articles[currentIndex];
-  const currentImageKey = currentArticle.imageUrl || currentArticle._id;
+  const currentImageKey = currentArticle.imageUrl || currentArticle.id;
   const isPortraitImage = portraitImages[currentImageKey] ?? false;
 
   return (
