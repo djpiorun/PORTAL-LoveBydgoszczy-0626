@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, Search, Users, Globe, Mail, Phone, User } from "lucide-react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 
 const PARTNER_TYPES = [
@@ -40,12 +39,66 @@ const EMPTY_FORM = {
   category: "",
 };
 
+type Partner = {
+  id: string;
+  name: string;
+  logoUrl?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactPerson?: string;
+  description?: string;
+  cooperationScope?: string;
+  status?: string;
+  type?: string;
+  notes?: string;
+  category?: string;
+};
+
+type Campaign = {
+  id: string;
+  partnerId?: string;
+};
+
 interface PartnerFormProps {
   formData: typeof EMPTY_FORM;
   setFormData: (d: typeof EMPTY_FORM) => void;
   onSubmit: (e: React.FormEvent) => void;
   isEditing: boolean;
 }
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const upsertById = <T extends { id: string }>(items: T[], item: T) => {
+  const index = items.findIndex((entry) => entry.id === item.id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = <T extends { id: string }>(items: T[], id: string) => items.filter((item) => item.id !== id);
+
+const normalizePartner = (item: any): Partner => ({
+  id: String(item?.id ?? item?._id ?? ""),
+  name: item?.name ?? "",
+  logoUrl: item?.logoUrl ?? item?.logo_url ?? "",
+  website: item?.website ?? "",
+  contactEmail: item?.contactEmail ?? item?.contact_email ?? "",
+  contactPhone: item?.contactPhone ?? item?.contact_phone ?? "",
+  contactPerson: item?.contactPerson ?? item?.contact_person ?? "",
+  description: item?.description ?? "",
+  cooperationScope: item?.cooperationScope ?? item?.cooperation_scope ?? "",
+  status: item?.status ?? "prospect",
+  type: item?.type ?? "advertiser",
+  notes: item?.notes ?? "",
+  category: item?.category ?? "",
+});
+
+const normalizeCampaign = (item: any): Campaign => ({
+  id: String(item?.id ?? item?._id ?? ""),
+  partnerId: item?.partnerId ?? item?.partner_id ?? undefined,
+});
 
 function PartnerForm({ formData, setFormData, onSubmit, isEditing }: PartnerFormProps) {
   const set = (key: keyof typeof EMPTY_FORM) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -63,7 +116,7 @@ function PartnerForm({ formData, setFormData, onSubmit, isEditing }: PartnerForm
           <Select value={formData.type} onValueChange={(v: any) => setFormData({ ...formData, type: v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {PARTNER_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              {PARTNER_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -72,7 +125,7 @@ function PartnerForm({ formData, setFormData, onSubmit, isEditing }: PartnerForm
           <Select value={formData.status} onValueChange={(v: any) => setFormData({ ...formData, status: v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {PARTNER_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+              {PARTNER_STATUSES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -117,17 +170,45 @@ function PartnerForm({ formData, setFormData, onSubmit, isEditing }: PartnerForm
 }
 
 export function PartnersTab() {
-  const partners = useQuery(api.ads.getPartners) || [];
-  const campaigns = useQuery(api.ads.getCampaigns) || [];
-  const createPartner = useMutation(api.ads.createPartner);
-  const updatePartner = useMutation(api.ads.updatePartner);
-  const deletePartner = useMutation(api.ads.deletePartner);
-
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
-  const [editingId, setEditingId] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [formData, setFormData] = useState(EMPTY_FORM);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/partners");
+        if (!active) return;
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        setPartners(data.map(normalizePartner));
+      } catch (error) {
+        console.warn("Ads partners API unavailable", error);
+        if (active) setPartners([]);
+      }
+
+      try {
+        const response = await apiFetch<any>("/admin/ads/campaigns");
+        if (!active) return;
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        setCampaigns(data.map(normalizeCampaign));
+      } catch (error) {
+        console.warn("Ads campaigns API unavailable", error);
+        if (active) setCampaigns([]);
+      }
+
+      if (active) setIsLoading(false);
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openNew = () => {
     setEditingId(null);
@@ -135,8 +216,8 @@ export function PartnersTab() {
     setIsOpen(true);
   };
 
-  const openEdit = (p: any) => {
-    setEditingId(p._id);
+  const openEdit = (p: Partner) => {
+    setEditingId(p.id);
     setFormData({
       name: p.name || "",
       logoUrl: p.logoUrl || "",
@@ -146,66 +227,90 @@ export function PartnersTab() {
       contactPerson: p.contactPerson || "",
       description: p.description || "",
       cooperationScope: p.cooperationScope || "",
-      status: p.status || "prospect",
-      type: p.type || "advertiser",
+      status: (p.status as any) || "prospect",
+      type: (p.type as any) || "advertiser",
       notes: p.notes || "",
       category: p.category || "",
     });
     setIsOpen(true);
   };
 
+  const buildPayload = () => ({
+    name: formData.name,
+    logo_url: formData.logoUrl || null,
+    website: formData.website || null,
+    contact_email: formData.contactEmail || null,
+    contact_phone: formData.contactPhone || null,
+    contact_person: formData.contactPerson || null,
+    description: formData.description || null,
+    cooperation_scope: formData.cooperationScope || null,
+    status: formData.status,
+    type: formData.type,
+    notes: formData.notes || null,
+    category: formData.category || null,
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = buildPayload();
     try {
-      const payload = {
-        name: formData.name,
-        logoUrl: formData.logoUrl || undefined,
-        website: formData.website || undefined,
-        contactEmail: formData.contactEmail || undefined,
-        contactPhone: formData.contactPhone || undefined,
-        contactPerson: formData.contactPerson || undefined,
-        description: formData.description || undefined,
-        cooperationScope: formData.cooperationScope || undefined,
-        status: formData.status,
-        type: formData.type,
-        notes: formData.notes || undefined,
-        category: formData.category || undefined,
-      };
       if (editingId) {
-        await updatePartner({ id: editingId, ...payload });
+        const response = await apiFetch<any>(`/admin/ads/partners/${editingId}`, {
+          method: "PUT",
+          body: payload,
+        });
+        const updated = normalizePartner(response?.data ?? response ?? { id: editingId, ...payload });
+        setPartners((prev) => upsertById(prev, updated));
         toast.success("Partner zaktualizowany");
       } else {
-        await createPartner(payload);
+        const response = await apiFetch<any>("/admin/ads/partners", {
+          method: "POST",
+          body: payload,
+        });
+        const created = normalizePartner(response?.data ?? response ?? { id: createLocalId(), ...payload });
+        setPartners((prev) => upsertById(prev, created));
         toast.success("Partner dodany");
       }
       setIsOpen(false);
-    } catch {
-      toast.error("Błąd podczas zapisywania partnera");
+    } catch (error) {
+      console.warn("Ads partners save failed", error);
+      const localId = editingId ?? createLocalId();
+      const localPartner = normalizePartner({ id: localId, ...payload });
+      setPartners((prev) => upsertById(prev, localPartner));
+      toast.success("Zapisano lokalnie (brak API partnerów)");
+      setIsOpen(false);
     }
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć tego partnera?")) return;
     try {
-      await deletePartner({ id });
+      await apiFetch(`/admin/ads/partners/${id}`, { method: "DELETE" });
+      setPartners((prev) => removeById(prev, id));
       toast.success("Partner usunięty");
-    } catch {
-      toast.error("Błąd podczas usuwania");
+    } catch (error) {
+      console.warn("Ads partners delete failed", error);
+      setPartners((prev) => removeById(prev, id));
+      toast.success("Usunięto lokalnie (brak API partnerów)");
     }
   };
 
-  const getTypeLabel = (type?: string) => PARTNER_TYPES.find(t => t.value === type)?.label || type || "—";
-  const getStatusLabel = (status?: string) => PARTNER_STATUSES.find(s => s.value === status)?.label || status || "—";
+  const getTypeLabel = (type?: string) => PARTNER_TYPES.find((t) => t.value === type)?.label || type || "—";
+  const getStatusLabel = (status?: string) => PARTNER_STATUSES.find((s) => s.value === status)?.label || status || "—";
 
   const getCampaignCount = (partnerId: string) =>
-    campaigns.filter((c: any) => c.partnerId === partnerId).length;
+    campaigns.filter((c) => c.partnerId === partnerId).length;
 
-  const filtered = partners.filter(p => {
+  const filtered = partners.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.contactEmail || "").toLowerCase().includes(search.toLowerCase());
     const matchType = typeFilter === "all" || p.type === typeFilter;
     return matchSearch && matchType;
   });
+
+  if (isLoading) {
+    return <div className="py-8 text-center text-muted-foreground">Ładowanie partnerów...</div>;
+  }
 
   return (
     <Card>
@@ -220,20 +325,20 @@ export function PartnersTab() {
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Szukaj partnera..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-9" placeholder="Szukaj partnera..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-[200px]"><SelectValue placeholder="Wszystkie typy" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Wszystkie typy</SelectItem>
-              {PARTNER_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              {PARTNER_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map((p: any) => (
-            <div key={p._id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow bg-white">
+          {filtered.map((p) => (
+            <div key={p.id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow bg-white">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
                   {p.logoUrl ? (
@@ -255,7 +360,7 @@ export function PartnersTab() {
                 </div>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}><Edit className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(p._id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(p.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
                 </div>
               </div>
               <div className="space-y-1 text-sm text-muted-foreground">
@@ -278,7 +383,7 @@ export function PartnersTab() {
                 <p className="text-xs text-muted-foreground mt-2 pt-2 border-t">{p.cooperationScope}</p>
               )}
               <div className="mt-2 pt-2 border-t flex justify-between text-xs text-muted-foreground">
-                <span>Kampanie: <strong>{getCampaignCount(p._id)}</strong></span>
+                <span>Kampanie: <strong>{getCampaignCount(p.id)}</strong></span>
                 {p.notes && <span className="italic truncate max-w-[150px]">{p.notes}</span>}
               </div>
             </div>

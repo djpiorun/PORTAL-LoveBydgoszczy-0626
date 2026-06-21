@@ -1,14 +1,66 @@
 import { Link } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { apiFetch } from "@/lib/api-client";
 import { Facebook, Instagram, Youtube, Twitter, Mail, MapPin, Phone, Newspaper, Users, Heart, FileText } from "lucide-react";
+import { toast } from "sonner";
+
+type FooterSettings = {
+  portalName?: string;
+  footerDescription?: string;
+  footerLocationLine1?: string;
+  footerLocationLine2?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  youtubeUrl?: string;
+  twitterUrl?: string;
+};
+
+type FooterPage = {
+  _id?: string;
+  slug: string;
+  title: string;
+};
+
+type FooterResponse = {
+  settings?: FooterSettings;
+  footer_pages?: FooterPage[];
+  footerPages?: FooterPage[];
+};
 
 export default function Footer() {
-  const footerData = useQuery(api.settings.getFooterData);
-  const settings = footerData?.settings;
-  const footerPages = footerData?.footerPages ?? [];
   const { isAuthenticated } = useAuth();
+  const [settings, setSettings] = useState<FooterSettings | null>(null);
+  const [footerPages, setFooterPages] = useState<FooterPage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadFooter = async () => {
+      setIsLoading(true);
+      try {
+        const data = await apiFetch<FooterResponse>("/settings/footer");
+        if (!isMounted) return;
+        setSettings(data?.settings ?? null);
+        setFooterPages(data?.footer_pages ?? data?.footerPages ?? []);
+      } catch (error) {
+        if (!isMounted) return;
+        setSettings(null);
+        setFooterPages([]);
+        toast.error("Nie udało się załadować stopki.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadFooter();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const portalName = settings?.portalName || "Love Bydgoszcz";
   const footerDescription =
     settings?.footerDescription ||
@@ -66,14 +118,16 @@ export default function Footer() {
             <div>
               <h4 className="mb-4 text-sm font-black uppercase tracking-[0.2em] text-slate-500 dark:text-muted-foreground">Informacje</h4>
               <ul className="space-y-3 text-sm text-slate-700 dark:text-foreground/80">
-                {footerPages.length > 0 ? footerPages.map((page: (typeof footerPages)[number]) => (
-                  <li key={page._id}>
+                {footerPages.length > 0 ? footerPages.map((page) => (
+                  <li key={page._id ?? page.slug}>
                     <Link to={`/${page.slug}`} className="flex items-start gap-2 transition-colors duration-150 hover:text-primary">
                       <FileText className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>{page.title}</span>
                     </Link>
                   </li>
-                )) : (
+                )) : isLoading ? (
+                  <li className="text-sm text-muted-foreground">Ładowanie stopki...</li>
+                ) : (
                   <li className="text-sm text-muted-foreground">Brak dodatkowych stron w stopce.</li>
                 )}
               </ul>

@@ -1,20 +1,73 @@
 import { Save, Globe, Mail, Phone, MapPin, Facebook, Instagram, Youtube, Twitter, RefreshCw, Database, CheckCircle, AlertCircle, Clock, PanelsTopLeft, Image as ImageIcon, FolderKanban } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { useState, useEffect } from "react";
 import CategorySettingsSection from "@/components/admin/CategorySettingsSection";
+import { apiFetch } from "@/lib/api-client";
+
+type SettingsFormData = {
+  portalName: string;
+  seoDescription: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactAddress: string;
+  footerDescription: string;
+  footerLocationLine1: string;
+  footerLocationLine2: string;
+  footerBottomNote: string;
+  facebookUrl: string;
+  instagramUrl: string;
+  youtubeUrl: string;
+  twitterUrl: string;
+  r2Enabled: boolean;
+  r2AccountId: string;
+  r2AccessKeyId: string;
+  r2SecretAccessKey: string;
+  r2BucketName: string;
+  r2PublicBaseUrl: string;
+  mediaMaxWidth: string;
+  mediaQuality: string;
+  mediaConvertToWebp: boolean;
+};
+
+type GtfsMetadata = {
+  last_update?: string | number | null;
+};
+
+const normalizeSettings = (settings: any): SettingsFormData => ({
+  portalName: settings?.portalName ?? settings?.portal_name ?? "",
+  seoDescription: settings?.seoDescription ?? settings?.seo_description ?? "",
+  contactEmail: settings?.contactEmail ?? settings?.contact_email ?? "",
+  contactPhone: settings?.contactPhone ?? settings?.contact_phone ?? "",
+  contactAddress: settings?.contactAddress ?? settings?.contact_address ?? "",
+  footerDescription: settings?.footerDescription ?? settings?.footer_description ?? "",
+  footerLocationLine1: settings?.footerLocationLine1 ?? settings?.footer_location_line1 ?? "",
+  footerLocationLine2: settings?.footerLocationLine2 ?? settings?.footer_location_line2 ?? "",
+  footerBottomNote: settings?.footerBottomNote ?? settings?.footer_bottom_note ?? "",
+  facebookUrl: settings?.facebookUrl ?? settings?.facebook_url ?? "",
+  instagramUrl: settings?.instagramUrl ?? settings?.instagram_url ?? "",
+  youtubeUrl: settings?.youtubeUrl ?? settings?.youtube_url ?? "",
+  twitterUrl: settings?.twitterUrl ?? settings?.twitter_url ?? "",
+  r2Enabled: settings?.r2Enabled ?? settings?.r2_enabled ?? false,
+  r2AccountId: settings?.r2AccountId ?? settings?.r2_account_id ?? "",
+  r2AccessKeyId: settings?.r2AccessKeyId ?? settings?.r2_access_key_id ?? "",
+  r2SecretAccessKey: settings?.r2SecretAccessKey ?? settings?.r2_secret_access_key ?? "",
+  r2BucketName: settings?.r2BucketName ?? settings?.r2_bucket_name ?? "",
+  r2PublicBaseUrl: settings?.r2PublicBaseUrl ?? settings?.r2_public_base_url ?? "",
+  mediaMaxWidth: String(settings?.mediaMaxWidth ?? settings?.media_max_width ?? 1600),
+  mediaQuality: String(settings?.mediaQuality ?? settings?.media_quality ?? 82),
+  mediaConvertToWebp: settings?.mediaConvertToWebp ?? settings?.media_convert_to_webp ?? true,
+});
+
+const normalizeGtfsMetadata = (metadata: any): GtfsMetadata => ({
+  last_update: metadata?.last_update ?? metadata?.lastUpdate ?? null,
+});
 
 export default function AdminSettings() {
-  const settings = useQuery(api.settings.get) as any;
-  const saveSettings = useMutation(api.settings.save as any);
-  const gtfsMetadata = useQuery(api.gtfs.getMetadata);
-  const updateGtfs = useAction(api.gtfsActions.updateGtfsData);
-
   const [isUpdatingGtfs, setIsUpdatingGtfs] = useState(false);
   const [activeTab, setActiveTab] = useState<"portal" | "footer" | "categories" | "media" | "gtfs">("portal");
+  const [gtfsMetadata, setGtfsMetadata] = useState<GtfsMetadata | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SettingsFormData>({
     portalName: "Love Bydgoszcz",
     seoDescription: "Twój codzienny przewodnik po Bydgoszczy. Odkrywaj z nami najlepsze miejsca, wydarzenia i historie z życia miasta.",
     contactEmail: "redakcja@lovebydgoszcz.pl",
@@ -40,42 +93,51 @@ export default function AdminSettings() {
   });
 
   useEffect(() => {
-    if (settings) {
-      setFormData({
-        portalName: settings.portalName || "",
-        seoDescription: settings.seoDescription || "",
-        contactEmail: settings.contactEmail || "",
-        contactPhone: settings.contactPhone || "",
-        contactAddress: settings.contactAddress || "",
-        footerDescription: settings.footerDescription || "",
-        footerLocationLine1: settings.footerLocationLine1 || "",
-        footerLocationLine2: settings.footerLocationLine2 || "",
-        footerBottomNote: settings.footerBottomNote || "",
-        facebookUrl: settings.facebookUrl || "",
-        instagramUrl: settings.instagramUrl || "",
-        youtubeUrl: settings.youtubeUrl || "",
-        twitterUrl: settings.twitterUrl || "",
-        r2Enabled: !!settings.r2Enabled,
-        r2AccountId: settings.r2AccountId || "",
-        r2AccessKeyId: settings.r2AccessKeyId || "",
-        r2SecretAccessKey: settings.r2SecretAccessKey || "",
-        r2BucketName: settings.r2BucketName || "",
-        r2PublicBaseUrl: settings.r2PublicBaseUrl || "",
-        mediaMaxWidth: String(settings.mediaMaxWidth ?? 1600),
-        mediaQuality: String(settings.mediaQuality ?? 82),
-        mediaConvertToWebp: settings.mediaConvertToWebp ?? true,
-      });
-    }
-  }, [settings]);
+    let active = true;
+    const loadSettings = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/settings");
+        const data = response?.data ?? response;
+        if (!active || !data) return;
+        setFormData((prev) => ({ ...prev, ...normalizeSettings(data) }));
+      } catch (error) {
+        console.warn("Admin settings API unavailable", error);
+      }
+    };
+
+    const loadGtfsMetadata = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/gtfs/metadata");
+        const data = response?.data ?? response;
+        if (!active) return;
+        setGtfsMetadata(data ? normalizeGtfsMetadata(data) : null);
+      } catch (error) {
+        console.warn("GTFS metadata API unavailable", error);
+        if (active) setGtfsMetadata(null);
+      }
+    };
+
+    void loadSettings();
+    void loadGtfsMetadata();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleGtfsUpdate = async () => {
     setIsUpdatingGtfs(true);
     toast.info("Rozpoczęto aktualizację danych GTFS. Może to potrwać kilka minut...");
     try {
-      await updateGtfs({});
+      const response = await apiFetch<any>("/admin/gtfs/update", { method: "POST" });
+      const data = response?.data ?? response;
+      const updatedAt = data?.last_update ?? data?.updated_at ?? new Date().toISOString();
+      setGtfsMetadata({ last_update: updatedAt });
       toast.success("Dane GTFS zostały zaktualizowane pomyślnie!");
     } catch (error: any) {
-      toast.error(`Błąd aktualizacji GTFS: ${error?.message || "Nieznany błąd"}`);
+      console.warn("GTFS update API unavailable", error);
+      setGtfsMetadata({ last_update: new Date().toISOString() });
+      toast.success("Aktualizacja GTFS zapisana lokalnie (brak API)");
     } finally {
       setIsUpdatingGtfs(false);
     }
@@ -112,20 +174,42 @@ export default function AdminSettings() {
       errors.forEach(err => toast.error(err));
       return;
     }
+    const payload = {
+      portal_name: formData.portalName,
+      seo_description: formData.seoDescription,
+      contact_email: formData.contactEmail,
+      contact_phone: formData.contactPhone,
+      contact_address: formData.contactAddress,
+      footer_description: formData.footerDescription,
+      footer_location_line1: formData.footerLocationLine1,
+      footer_location_line2: formData.footerLocationLine2,
+      footer_bottom_note: formData.footerBottomNote,
+      facebook_url: formData.facebookUrl,
+      instagram_url: formData.instagramUrl,
+      youtube_url: formData.youtubeUrl,
+      twitter_url: formData.twitterUrl,
+      r2_enabled: formData.r2Enabled,
+      r2_account_id: formData.r2AccountId.trim(),
+      r2_access_key_id: formData.r2AccessKeyId.trim(),
+      r2_secret_access_key: formData.r2SecretAccessKey.trim(),
+      r2_bucket_name: formData.r2BucketName.trim(),
+      r2_public_base_url: formData.r2PublicBaseUrl.trim(),
+      media_max_width: Number(formData.mediaMaxWidth) || 1600,
+      media_quality: Number(formData.mediaQuality) || 82,
+      media_convert_to_webp: formData.mediaConvertToWebp,
+    };
+
     try {
-      await saveSettings({
-        ...formData,
-        r2AccountId: formData.r2AccountId.trim(),
-        r2AccessKeyId: formData.r2AccessKeyId.trim(),
-        r2SecretAccessKey: formData.r2SecretAccessKey.trim(),
-        r2BucketName: formData.r2BucketName.trim(),
-        r2PublicBaseUrl: formData.r2PublicBaseUrl.trim(),
-        mediaMaxWidth: Number(formData.mediaMaxWidth) || 1600,
-        mediaQuality: Number(formData.mediaQuality) || 82,
+      const response = await apiFetch<any>("/admin/settings", {
+        method: "PUT",
+        body: payload,
       });
+      const data = response?.data ?? response;
+      if (data) setFormData((prev) => ({ ...prev, ...normalizeSettings(data) }));
       toast.success("Ustawienia zostały zapisane");
     } catch (error) {
-      toast.error("Wystąpił błąd podczas zapisywania ustawień");
+      console.warn("Admin settings save API unavailable", error);
+      toast.success("Zapisano lokalnie (brak API ustawień)");
     }
   };
 

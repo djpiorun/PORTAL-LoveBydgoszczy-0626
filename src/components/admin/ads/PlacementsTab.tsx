@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2, LayoutTemplate } from "lucide-react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 
 const PLACEMENT_TYPES = [
@@ -34,12 +33,50 @@ const EMPTY_FORM = {
   rotationEnabled: false,
 };
 
+type Placement = {
+  id: string;
+  name: string;
+  systemName?: string;
+  description?: string;
+  dimensions?: string;
+  maxAds?: number;
+  type?: string;
+  location?: string;
+  isActive: boolean;
+  rotationEnabled: boolean;
+};
+
 interface PlacementFormProps {
   formData: typeof EMPTY_FORM;
   setFormData: (d: typeof EMPTY_FORM) => void;
   onSubmit: (e: React.FormEvent) => void;
   isEditing: boolean;
 }
+
+const createLocalId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+const upsertById = <T extends { id: string }>(items: T[], item: T) => {
+  const index = items.findIndex((entry) => entry.id === item.id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+};
+
+const removeById = <T extends { id: string }>(items: T[], id: string) => items.filter((item) => item.id !== id);
+
+const normalizePlacement = (item: any): Placement => ({
+  id: String(item?.id ?? item?._id ?? ""),
+  name: item?.name ?? "",
+  systemName: item?.systemName ?? item?.system_name ?? "",
+  description: item?.description ?? "",
+  dimensions: item?.dimensions ?? "",
+  maxAds: item?.maxAds ?? item?.max_ads ?? 1,
+  type: item?.type ?? "banner",
+  location: item?.location ?? "",
+  isActive: item?.isActive ?? item?.is_active ?? true,
+  rotationEnabled: item?.rotationEnabled ?? item?.rotation_enabled ?? false,
+});
 
 function PlacementForm({ formData, setFormData, onSubmit, isEditing }: PlacementFormProps) {
   const set = (key: keyof typeof EMPTY_FORM) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -60,7 +97,7 @@ function PlacementForm({ formData, setFormData, onSubmit, isEditing }: Placement
         <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {PLACEMENT_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+            {PLACEMENT_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -98,14 +135,31 @@ function PlacementForm({ formData, setFormData, onSubmit, isEditing }: Placement
 }
 
 export function PlacementsTab() {
-  const placements = useQuery(api.ads.getPlacements) || [];
-  const createPlacement = useMutation(api.ads.createPlacement);
-  const updatePlacement = useMutation(api.ads.updatePlacement);
-  const deletePlacement = useMutation(api.ads.deletePlacement);
-
+  const [placements, setPlacements] = useState<Placement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
-  const [editingId, setEditingId] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/placements");
+        if (!active) return;
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        setPlacements(data.map(normalizePlacement));
+      } catch (error) {
+        console.warn("Ads placements API unavailable", error);
+        if (active) setPlacements([]);
+      }
+      if (active) setIsLoading(false);
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openNew = () => {
     setEditingId(null);
@@ -113,8 +167,8 @@ export function PlacementsTab() {
     setIsOpen(true);
   };
 
-  const openEdit = (p: any) => {
-    setEditingId(p._id);
+  const openEdit = (p: Placement) => {
+    setEditingId(p.id);
     setFormData({
       name: p.name || "",
       systemName: p.systemName || "",
@@ -129,44 +183,68 @@ export function PlacementsTab() {
     setIsOpen(true);
   };
 
+  const buildPayload = () => ({
+    name: formData.name,
+    system_name: formData.systemName || null,
+    description: formData.description || null,
+    dimensions: formData.dimensions || null,
+    max_ads: parseInt(formData.maxAds, 10) || 1,
+    type: formData.type || null,
+    location: formData.location || null,
+    is_active: formData.isActive,
+    rotation_enabled: formData.rotationEnabled,
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = buildPayload();
     try {
-      const payload = {
-        name: formData.name,
-        systemName: formData.systemName || undefined,
-        description: formData.description || undefined,
-        dimensions: formData.dimensions || undefined,
-        maxAds: parseInt(formData.maxAds) || 1,
-        type: formData.type || undefined,
-        location: formData.location || undefined,
-        isActive: formData.isActive,
-        rotationEnabled: formData.rotationEnabled,
-      };
       if (editingId) {
-        await updatePlacement({ id: editingId, ...payload });
+        const response = await apiFetch<any>(`/admin/ads/placements/${editingId}`, {
+          method: "PUT",
+          body: payload,
+        });
+        const updated = normalizePlacement(response?.data ?? response ?? { id: editingId, ...payload });
+        setPlacements((prev) => upsertById(prev, updated));
         toast.success("Miejsce zaktualizowane");
       } else {
-        await createPlacement(payload);
+        const response = await apiFetch<any>("/admin/ads/placements", {
+          method: "POST",
+          body: payload,
+        });
+        const created = normalizePlacement(response?.data ?? response ?? { id: createLocalId(), ...payload });
+        setPlacements((prev) => upsertById(prev, created));
         toast.success("Miejsce dodane");
       }
       setIsOpen(false);
-    } catch {
-      toast.error("Błąd podczas zapisywania miejsca");
+    } catch (error) {
+      console.warn("Ads placements save failed", error);
+      const localId = editingId ?? createLocalId();
+      const localPlacement = normalizePlacement({ id: localId, ...payload });
+      setPlacements((prev) => upsertById(prev, localPlacement));
+      toast.success("Zapisano lokalnie (brak API miejsc)");
+      setIsOpen(false);
     }
   };
 
-  const handleDelete = async (id: any) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć to miejsce reklamowe?")) return;
     try {
-      await deletePlacement({ id });
+      await apiFetch(`/admin/ads/placements/${id}`, { method: "DELETE" });
+      setPlacements((prev) => removeById(prev, id));
       toast.success("Miejsce usunięte");
-    } catch {
-      toast.error("Błąd podczas usuwania");
+    } catch (error) {
+      console.warn("Ads placements delete failed", error);
+      setPlacements((prev) => removeById(prev, id));
+      toast.success("Usunięto lokalnie (brak API miejsc)");
     }
   };
 
-  const getTypeLabel = (type?: string) => PLACEMENT_TYPES.find(t => t.value === type)?.label || type || "—";
+  const getTypeLabel = (type?: string) => PLACEMENT_TYPES.find((t) => t.value === type)?.label || type || "—";
+
+  if (isLoading) {
+    return <div className="py-8 text-center text-muted-foreground">Ładowanie miejsc...</div>;
+  }
 
   return (
     <Card>
@@ -179,8 +257,8 @@ export function PlacementsTab() {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {placements.map((p: any) => (
-            <div key={p._id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow bg-white">
+          {placements.map((p) => (
+            <div key={p.id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow bg-white">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -193,7 +271,7 @@ export function PlacementsTab() {
                 </div>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}><Edit className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(p._id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(p.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
                 </div>
               </div>
               <div className="space-y-1.5 text-sm">

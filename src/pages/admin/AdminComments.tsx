@@ -1,35 +1,86 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Trash2, ExternalLink, ChevronLeft, ChevronRight, CheckCircle, XCircle, Search, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
+
+type AdminComment = {
+  id: string;
+  targetId: string;
+  targetType: string;
+  authorName: string;
+  content: string;
+  createdAt: number;
+  status?: string;
+};
+
+const normalizeComment = (comment: any): AdminComment => ({
+  id: comment.id,
+  targetId: comment.target_id,
+  targetType: comment.target_type,
+  authorName: comment.author_name,
+  content: comment.content,
+  createdAt: comment.created_at ? new Date(comment.created_at).getTime() : Date.now(),
+  status: comment.status ?? "approved",
+});
 
 export default function AdminComments() {
-  const comments = useQuery(api.comments.getAll);
-  const removeComment = useMutation(api.comments.remove);
-  const updateStatus = useMutation(api.comments.updateStatus);
+  const [comments, setComments] = useState<AdminComment[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const itemsPerPage = 10;
 
-  const handleDelete = async (id: any) => {
+  const loadComments = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch<any>("/comments/admin");
+      const data = Array.isArray(response) ? response : response?.data ?? [];
+      const items = data.map(normalizeComment);
+      setComments(items);
+    } catch (error: any) {
+      setComments([]);
+      toast.error(error?.message || "Błąd pobierania komentarzy");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const run = async () => {
+      if (!isMounted) return;
+      await loadComments();
+    };
+    run();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadComments]);
+
+  const handleDelete = async (id: string) => {
     if (confirm("Czy na pewno chcesz usunąć ten komentarz?")) {
-      await removeComment({ id });
+      await apiFetch(`/comments/${id}`, { method: "DELETE" });
+      setComments((prev) => prev?.filter((comment) => comment.id !== id) ?? null);
       toast.success("Komentarz usunięty");
     }
   };
 
-  const handleUpdateStatus = async (id: any, status: "approved" | "rejected") => {
-    await updateStatus({ id, status });
-    toast.success(`Status zmieniony na: ${status === 'approved' ? 'Zatwierdzony' : 'Odrzucony'}`);
+  const handleUpdateStatus = async (id: string, status: "approved" | "rejected") => {
+    await apiFetch(`/comments/${id}/status`, { method: "PUT", body: { status } });
+    setComments((prev) =>
+      prev?.map((comment) => (comment.id === id ? { ...comment, status } : comment)) ?? null,
+    );
+    toast.success(`Status zmieniony na: ${status === "approved" ? "Zatwierdzony" : "Odrzucony"}`);
   };
 
-  const filteredComments = comments?.filter(c => {
-    const cStatus = c.status || "approved";
+  const filteredComments = comments?.filter((comment) => {
+    const cStatus = comment.status || "approved";
     const matchesStatus = filterStatus === "all" || cStatus === filterStatus;
-    const matchesSearch = c.content.toLowerCase().includes(searchQuery.toLowerCase()) || c.authorName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch =
+      comment.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      comment.authorName.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
@@ -43,15 +94,18 @@ export default function AdminComments() {
           <h1 className="text-3xl font-black text-slate-900">Komentarze</h1>
           <p className="text-slate-500 mt-1">Moderacja komentarzy użytkowników.</p>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Szukaj komentarza..." 
+            <input
+              type="text"
+              placeholder="Szukaj komentarza..."
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 outline-none text-sm w-full sm:w-64"
             />
           </div>
@@ -59,7 +113,10 @@ export default function AdminComments() {
             <Filter className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <select
               value={filterStatus}
-              onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setFilterStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 outline-none text-sm appearance-none w-full sm:w-auto"
             >
               <option value="all">Wszystkie statusy</option>
@@ -85,7 +142,7 @@ export default function AdminComments() {
               </tr>
             </thead>
             <tbody>
-              {!comments ? (
+              {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b border-slate-100">
                     <td className="p-4"><div className="h-5 bg-slate-100 rounded w-24 animate-pulse"></div></td>
@@ -106,7 +163,7 @@ export default function AdminComments() {
                 paginatedComments?.map((comment) => {
                   const status = comment.status || "approved";
                   return (
-                    <tr key={comment._id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+                    <tr key={comment.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
                       <td className="p-4">
                         <p className="font-bold text-slate-900">{comment.authorName}</p>
                       </td>
@@ -114,41 +171,41 @@ export default function AdminComments() {
                         <p className="text-sm text-slate-600 line-clamp-2">{comment.content}</p>
                       </td>
                       <td className="p-4 text-sm text-slate-500 whitespace-nowrap">
-                        {new Date(comment.createdAt).toLocaleDateString()} {new Date(comment.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {new Date(comment.createdAt).toLocaleDateString()} {new Date(comment.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          status === 'approved' ? 'bg-green-100 text-green-800' :
-                          status === 'rejected' ? 'bg-red-100 text-red-800' :
-                          'bg-yellow-100 text-yellow-800'
+                          status === "approved" ? "bg-green-100 text-green-800" :
+                          status === "rejected" ? "bg-red-100 text-red-800" :
+                          "bg-yellow-100 text-yellow-800"
                         }`}>
-                          {status === 'approved' ? 'Zatwierdzony' : status === 'rejected' ? 'Odrzucony' : 'Oczekujący'}
+                          {status === "approved" ? "Zatwierdzony" : status === "rejected" ? "Odrzucony" : "Oczekujący"}
                         </span>
                       </td>
                       <td className="p-4">
-                        <Link 
-                          to={comment.targetType === 'article' ? `/${comment.targetId}` : `/wydarzenie/${comment.targetId}`}
+                        <Link
+                          to={comment.targetType === "article" ? `/${comment.targetId}` : `/wydarzenie/${comment.targetId}`}
                           className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline bg-primary/10 px-2 py-1 rounded-lg whitespace-nowrap"
                           target="_blank"
                         >
-                          {comment.targetType === 'article' ? 'Artykuł' : 'Wydarzenie'}
+                          {comment.targetType === "article" ? "Artykuł" : "Wydarzenie"}
                           <ExternalLink className="w-3 h-3" />
                         </Link>
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          {status !== 'approved' && (
+                          {status !== "approved" && (
                             <button
-                              onClick={() => handleUpdateStatus(comment._id, "approved")}
+                              onClick={() => handleUpdateStatus(comment.id, "approved")}
                               className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                               title="Zatwierdź"
                             >
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {status !== 'rejected' && (
+                          {status !== "rejected" && (
                             <button
-                              onClick={() => handleUpdateStatus(comment._id, "rejected")}
+                              onClick={() => handleUpdateStatus(comment.id, "rejected")}
                               className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
                               title="Odrzuć"
                             >
@@ -156,7 +213,7 @@ export default function AdminComments() {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDelete(comment._id)}
+                            onClick={() => handleDelete(comment.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Usuń"
                           >
@@ -179,14 +236,14 @@ export default function AdminComments() {
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >

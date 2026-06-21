@@ -1,13 +1,28 @@
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 interface AdSlotProps {
   placement: string;
   className?: string;
   fallback?: React.ReactNode;
 }
+
+const normalizeCreative = (creative: any) => ({
+  _id: String(creative?.id ?? creative?._id ?? ""),
+  name: creative?.name ?? "",
+  type: creative?.type ?? creative?.creative_type ?? "banner",
+  content: creative?.content ?? creative?.html ?? null,
+  desktopImageUrl: creative?.desktopImageUrl ?? creative?.desktop_image_url ?? creative?.image_url ?? creative?.imageUrl ?? null,
+  mobileImageUrl: creative?.mobileImageUrl ?? creative?.mobile_image_url ?? null,
+  targetUrl: creative?.targetUrl ?? creative?.target_url ?? null,
+});
+
+const normalizeAdsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.ads ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeCreative) : [];
+};
 
 function CreativeRenderer({ creative, onImpression, onClick }: {
   creative: any;
@@ -123,10 +138,52 @@ function CreativeRenderer({ creative, onImpression, onClick }: {
 }
 
 export default function AdSlot({ placement, className = "", fallback }: AdSlotProps) {
-  const ads = useQuery(api.ads.getAdsByPlacement, { placementSystemName: placement });
-  const trackImpression = useMutation(api.ads.trackImpression);
-  const trackClick = useMutation(api.ads.trackClick);
+  const [ads, setAds] = useState<any[] | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  const trackImpression = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-impression", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads impression tracking unavailable", error);
+    }
+  }, []);
+
+  const trackClick = useCallback(async (creativeId: string) => {
+    if (!creativeId) return;
+    try {
+      await apiFetch("/ads/track-click", {
+        method: "POST",
+        body: { creative_id: creativeId },
+      });
+    } catch (error) {
+      console.warn("Ads click tracking unavailable", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadAds = async () => {
+      try {
+        const payload = await apiFetch(`/ads?placement=${encodeURIComponent(placement)}`);
+        if (!active) return;
+        setAds(normalizeAdsPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setAds([]);
+        toast.warning("Reklamy są chwilowo niedostępne.");
+      }
+    };
+
+    loadAds();
+    return () => {
+      active = false;
+    };
+  }, [placement]);
 
   useEffect(() => {
     if (!ads || ads.length <= 1) return;
@@ -136,7 +193,7 @@ export default function AdSlot({ placement, className = "", fallback }: AdSlotPr
     return () => clearInterval(interval);
   }, [ads]);
 
-  if (ads === undefined) return null;
+  if (ads === null) return null;
   if (ads.length === 0) return fallback ? <>{fallback}</> : null;
 
   const creative = ads[currentIndex % ads.length];
@@ -146,8 +203,8 @@ export default function AdSlot({ placement, className = "", fallback }: AdSlotPr
     <div className={className}>
       <CreativeRenderer
         creative={creative}
-        onImpression={() => trackImpression({ creativeId: creative._id })}
-        onClick={() => trackClick({ creativeId: creative._id })}
+        onImpression={() => trackImpression(creative._id)}
+        onClick={() => trackClick(creative._id)}
       />
     </div>
   );

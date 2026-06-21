@@ -1,9 +1,10 @@
+import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import CategoryPage from "./CategoryPage";
-import ArticlePage from "./ArticlePage";
+import ArticlePage, { RestArticlePage } from "./ArticlePage";
 import StaticPage from "./StaticPage";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 export const DYNAMIC_ROUTE_CATEGORIES = [
   "miasto", "rozrywka", "kultura", "biznes", "gastronomia", "medyczna", "bydgoszczanie",
@@ -31,10 +32,86 @@ export function resolveRouteDecision(slug: string, cmsPageExists: boolean): Rout
 export default function DynamicRoute() {
   const { slug } = useParams<{ slug: string }>();
 
-  // Check if this slug belongs to a CMS static page
-  const cmsPage = useQuery(api.pages.getBySlug, slug ? { slug } : "skip");
+  const [restArticle, setRestArticle] = useState<any | null | undefined>(undefined);
+  const [cmsPage, setCmsPage] = useState<any | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!slug) {
+      setRestArticle(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setRestArticle(undefined);
+
+    const fetchRestArticle = async () => {
+      try {
+        const response = await fetch(`/api/articles/slug/${encodeURIComponent(slug)}`, {
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          setRestArticle(null);
+          return;
+        }
+
+        const payload = await response.json();
+        const data = payload?.data ?? payload;
+        const articleData = data?.data ?? data;
+        if (articleData?.id) {
+          setRestArticle(articleData);
+          return;
+        }
+
+        setRestArticle(null);
+      } catch (error: any) {
+        if (error?.name === "AbortError") return;
+        setRestArticle(null);
+      }
+    };
+
+    void fetchRestArticle();
+
+    return () => controller.abort();
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    let active = true;
+    setCmsPage(undefined);
+    const loadPage = async () => {
+      try {
+        const payload = await apiFetch<any>(`/pages/slug/${slug}`);
+        if (!active) return;
+        const data = payload?.data ?? payload ?? null;
+        setCmsPage(data);
+      } catch (error) {
+        if (!active) return;
+        setCmsPage(null);
+        toast.warning("Strony CMS są chwilowo niedostępne.");
+      }
+    };
+
+    loadPage();
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   if (!slug) return null;
+
+  if (restArticle) {
+    return <RestArticlePage article={restArticle} />;
+  }
+
+  if (restArticle === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   const lowerSlug = slug.toLowerCase();
 

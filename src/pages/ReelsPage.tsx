@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ChevronLeft, X, Heart, MessageCircle, Eye, Play, ChevronDown } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import Comments from "@/components/Comments";
 import { useIsMobile } from "@/hooks/use-mobile";
-import type { Id } from "@/convex/_generated/dataModel";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const categories = [
   { key: "miasto",        label: "Miasto",        color: "bg-blue-500" },
@@ -24,7 +23,7 @@ const categories = [
 type CategoryKey = (typeof categories)[number]["key"];
 
 type Reel = {
-  _id: Id<"reels">;
+  _id: string;
   title: string;
   description?: string;
   coverImage?: string;
@@ -192,8 +191,8 @@ export default function ReelsPage() {
     ? (category as CategoryKey)
     : categories[0].key;
 
-  // Fetch reels for active category
-  const reels = useQuery(api.reels.list, { limit: 20, category: activeCategory as any });
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -207,7 +206,6 @@ export default function ReelsPage() {
   const [autoAdvancedCount, setAutoAdvancedCount] = useState(0);
   const [showNextHint, setShowNextHint] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
-  const toggleLikeMutation = useMutation(api.reels.toggleLike);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const currentCategoryIndex = useMemo(
@@ -223,6 +221,36 @@ export default function ReelsPage() {
     setVisibleCategoryBadge(activeCategory);
     const timeout = window.setTimeout(() => setVisibleCategoryBadge(null), 850);
     return () => window.clearTimeout(timeout);
+  }, [activeCategory]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const normalizeList = (payload: any) => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.results)) return payload.results;
+      return [];
+    };
+
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const payload = await apiFetch(`/reels?category=${activeCategory}&limit=20`);
+        if (!isMounted) return;
+        setReels(normalizeList(payload));
+      } catch (error) {
+        if (!isMounted) return;
+        setReels([]);
+        toast.error("Nie udało się pobrać rolek.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
   }, [activeCategory]);
 
   useEffect(() => {
@@ -313,8 +341,17 @@ export default function ReelsPage() {
     const next = { ...liked, [id]: !was };
     setLiked(next);
     localStorage.setItem("reels_liked", JSON.stringify(next));
-    try { await toggleLikeMutation({ id: id as Id<"reels">, isLiked: !was }); }
-    catch { const r = { ...liked, [id]: was }; setLiked(r); localStorage.setItem("reels_liked", JSON.stringify(r)); }
+    try {
+      await apiFetch(`/reels/${id}/like`, {
+        method: "POST",
+        body: { is_liked: !was },
+      });
+    } catch (error) {
+      const fallback = { ...liked, [id]: was };
+      setLiked(fallback);
+      localStorage.setItem("reels_liked", JSON.stringify(fallback));
+      toast.error("Nie udało się zapisać polubienia.");
+    }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -332,7 +369,7 @@ export default function ReelsPage() {
     if (dx > 0 && currentCategoryIndex > 0) goToCategory(currentCategoryIndex - 1);
   };
 
-  if (reels === undefined) {
+  if (isLoading) {
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-white border-t-transparent" />

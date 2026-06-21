@@ -1,5 +1,3 @@
-import { Id } from "@/convex/_generated/dataModel";
-
 export type ArticleElement = {
   id: string;
   label: string;
@@ -9,7 +7,7 @@ export type ArticleElement = {
 };
 
 export type PublicationUpdateDraft = {
-  id?: Id<"article_updates">;
+  id?: string;
   content: string;
   publishedAt: number;
 };
@@ -493,7 +491,7 @@ export type ArticleSponsoredDraft = {
 };
 
 export type ArticleType = {
-  _id?: Id<"articles">;
+  _id?: string;
   title: string;
   excerpt: string;
   content: string;

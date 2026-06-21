@@ -1,6 +1,4 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Link, useNavigate } from "react-router";
 import {
   CalendarDays, ChevronRight, Clock, CloudSun, Flame, HeartPulse,
@@ -13,6 +11,9 @@ import { fetchHomepageFeed, buildDirectoryHref, buildDirectoryListingHref, getPo
 import StoryViewer from "@/components/StoryViewer";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,67 @@ function getPlaceCategoryTone(category?: string) {
   return tones[category || ""] ?? { color: "from-slate-500 to-slate-700" };
 }
 
+const toTimestamp = (value?: string | number | null) => {
+  if (typeof value === "number") return value;
+  if (!value) return Date.now();
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+};
+
+const normalizeStory = (story: any) => ({
+  _id: String(story?.id ?? story?._id ?? ""),
+  title: story?.title ?? "",
+  author: story?.author ?? "",
+  coverImage: story?.coverImage ?? story?.cover_image ?? "",
+  items: Array.isArray(story?.items) ? story.items : [],
+});
+
+const normalizeStoriesPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.stories ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeStory) : [];
+};
+
+const normalizeUpdate = (update: any) => ({
+  _id: String(update?.id ?? update?._id ?? ""),
+  title: update?.title ?? "",
+  category: update?.category ?? null,
+  location: update?.location ?? null,
+  publishedAt: toTimestamp(update?.publishedAt ?? update?.published_at ?? update?.created_at),
+});
+
+const normalizeUpdatesPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.updates ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeUpdate) : [];
+};
+
+const normalizeEvent = (event: any) => ({
+  _id: String(event?.id ?? event?._id ?? ""),
+  title: event?.title ?? "",
+  description: event?.description ?? "",
+  category: event?.category ?? "",
+  imageUrl: event?.imageUrl ?? event?.image_url ?? null,
+  location: event?.location ?? "",
+  startDate: toTimestamp(event?.startDate ?? event?.start_date),
+  endDate: event?.endDate ?? event?.end_date ?? null,
+  price: event?.price ?? null,
+  organizer: event?.organizer ?? null,
+});
+
+const normalizeEventsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.events ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeEvent) : [];
+};
+
+const normalizeAuthor = (author: any) => ({
+  name: author?.name ?? author?.full_name ?? "",
+  image: author?.image ?? author?.image_url ?? author?.avatar_url ?? null,
+});
+
+const normalizeAuthorsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.authors ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeAuthor) : [];
+};
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function Skeleton({ className }: { className?: string }) {
@@ -148,11 +210,31 @@ function SectionHead({ title, href, icon: Icon, accentFrom, accentTo }: {
 // ─── Mobile Stories Section ───────────────────────────────────────────────────
 
 function MobileStoriesSection() {
-  const stories = useQuery(api.stories.getActive);
+  const [stories, setStories] = useState<any[] | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    const loadStories = async () => {
+      try {
+        const payload = await apiFetch("/stories?active=1");
+        if (!active) return;
+        setStories(normalizeStoriesPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setStories([]);
+        toast.warning("Relacje są chwilowo niedostępne.");
+      }
+    };
+
+    loadStories();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Loading skeleton
-  if (stories === undefined) {
+  if (stories === null) {
     return (
       <div className="flex gap-2.5 overflow-x-auto scrollbar-hide -mx-4 px-4 pb-0.5">
         {[...Array(5)].map((_, i) => (
@@ -1067,11 +1149,59 @@ export default function MobileLanding() {
   const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
   const nav = useNavigate();
 
-  const allArticles = useQuery(api.articles.list, { limit: 30 });
-  const resolvedArticles = useResolvedArticles(allArticles);
-  const updates = useQuery(api.updates.list, {});
-  const events = useQuery(api.events.list, { limit: 8 });
-  const authors = useQuery(api.users.getAuthors, {});
+  const [allArticles, setAllArticles] = useState<any[] | null>(null);
+  const [updates, setUpdates] = useState<any[] | null>(null);
+  const [events, setEvents] = useState<any[] | null>(null);
+  const [authors, setAuthors] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadData = async () => {
+      const [articlesResult, updatesResult, eventsResult, authorsResult] = await Promise.allSettled([
+        fetchArticles({ limit: 30 }),
+        apiFetch("/updates?limit=8"),
+        apiFetch("/events?limit=8"),
+        apiFetch("/authors"),
+      ]);
+
+      if (!active) return;
+
+      if (articlesResult.status === "fulfilled") {
+        setAllArticles(Array.isArray(articlesResult.value) ? articlesResult.value : []);
+      } else {
+        setAllArticles([]);
+        toast.warning("Artykuły są chwilowo niedostępne.");
+      }
+
+      if (updatesResult.status === "fulfilled") {
+        setUpdates(normalizeUpdatesPayload(updatesResult.value));
+      } else {
+        setUpdates([]);
+        toast.warning("Aktualizacje są chwilowo niedostępne.");
+      }
+
+      if (eventsResult.status === "fulfilled") {
+        setEvents(normalizeEventsPayload(eventsResult.value));
+      } else {
+        setEvents([]);
+        toast.warning("Wydarzenia są chwilowo niedostępne.");
+      }
+
+      if (authorsResult.status === "fulfilled") {
+        setAuthors(normalizeAuthorsPayload(authorsResult.value));
+      } else {
+        setAuthors([]);
+        toast.warning("Autorzy są chwilowo niedostępni.");
+      }
+    };
+
+    loadData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const resolvedArticles = useResolvedArticles(allArticles ?? undefined);
 
   const heroArticles = useMemo(() => {
     const authorMap = new Map((authors ?? []).map((author: any) => [author.name, author.image]));
@@ -1095,7 +1225,7 @@ export default function MobileLanding() {
   }, [allArticles]);
 
   const firstArticleImg = (allArticles ?? [])[0]?.imageUrl || "/assets/logo-lovebydgoszcz.png";
-  const isLoading = allArticles === undefined;
+  const isLoading = allArticles === null;
 
   return (
     <div className="relative bg-background overflow-x-hidden">

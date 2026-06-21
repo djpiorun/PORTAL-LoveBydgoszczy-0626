@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import {
   AlertCircle, BarChart3, Building2, Check, ChevronDown, ChevronRight, ChevronUp, Globe, Layers,
   Pencil, Plus, Save, Settings2, Shield, Tag, Trash2, Trophy, Users, Archive, Eye, EyeOff, Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { ADMIN_CATEGORY_DEFINITIONS, getAdminCategoryDefinition, type AdminCategorySubcategory } from "@/lib/adminCategories";
+import { ADMIN_CATEGORY_DEFINITIONS, type AdminCategorySubcategory } from "@/lib/adminCategories";
+import { apiFetch } from "@/lib/api-client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CategoryItem = {
-  _id?: Id<"category_settings">;
+  _id?: string;
   key: string;
   label: string;
   description?: string;
@@ -27,28 +25,28 @@ type CategoryItem = {
 };
 
 type SportTeamForm = {
-  id?: Id<"sport_teams">;
+  id?: string;
   name: string; shortName: string; slug: string; logo: string;
   sportType: "pilka_nozna" | "zuzel" | "siatkowka" | "inne";
   league: string; city: string; stadium: string; website: string; isActive: boolean;
 };
 
 type SportPlayerForm = {
-  id?: Id<"sport_players">;
-  fullName: string; slug: string; teamId?: Id<"sport_teams">; teamName: string;
+  id?: string;
+  fullName: string; slug: string; teamId?: string; teamName: string;
   sportType: "pilka_nozna" | "zuzel" | "siatkowka" | "inne";
   number: string; position: string; photo: string; bio: string; isActive: boolean;
 };
 
 type PoliticianForm = {
-  id?: Id<"politicians">;
+  id?: string;
   fullName: string; slug: string; party: string; position: string;
   photo: string; websiteUrl: string; facebookUrl: string; twitterUrl: string;
   bio: string; isActive: boolean;
 };
 
 type InvestmentForm = {
-  id?: Id<"investments">;
+  id?: string;
   projectName: string; slug: string; description: string;
   projectStatus: "planowana" | "w_trakcie" | "zakonczona" | "wstrzymana";
   location: string; startDate: string; endDate: string;
@@ -57,17 +55,17 @@ type InvestmentForm = {
 };
 
 type CategoryEntityItem = {
-  _id: Id<"category_entities">;
+  _id: string;
   categoryKey: string; entityType: string; name: string; slug: string;
   description?: string; color?: string; icon?: string;
-  parentId?: Id<"category_entities">; externalRef?: string;
+  parentId?: string; externalRef?: string;
   metadata?: string; isActive?: boolean; order?: number;
 };
 
 type CategoryEntityForm = {
-  id?: Id<"category_entities">;
+  id?: string;
   entityType: string; name: string; slug: string; description: string;
-  color: string; icon: string; parentId?: Id<"category_entities">;
+  color: string; icon: string; parentId?: string;
   externalRef: string; metadata: string; isActive: boolean; order: number;
 };
 
@@ -151,6 +149,146 @@ function normalizeSlug(value: string) {
     .replace(/[ąćęłńóśźż]/g, (c) => ({ ą: "a", ć: "c", ę: "e", ł: "l", ń: "n", ó: "o", ś: "s", ź: "z", ż: "z" }[c] ?? c))
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
+
+const createLocalId = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const buildFallbackCategories = () => ADMIN_CATEGORY_DEFINITIONS.map((cat, i) => ({
+  key: cat.value,
+  label: cat.label,
+  description: cat.description,
+  color: cat.color,
+  icon: "",
+  type: cat.type,
+  routeSlug: cat.routeSlug,
+  subcategories: cat.subcategories,
+  order: i + 1,
+  isActive: true,
+  isDefault: true,
+}));
+
+const upsertById = <T extends { _id?: string }>(list: T[], item: T) => {
+  const id = item._id ?? createLocalId();
+  const nextItem = { ...item, _id: id } as T;
+  const index = list.findIndex((entry) => entry._id === id);
+  if (index >= 0) {
+    const next = [...list];
+    next[index] = nextItem;
+    return next;
+  }
+  return [...list, nextItem];
+};
+
+const removeById = <T extends { _id?: string }>(list: T[], id?: string) =>
+  (id ? list.filter((entry) => entry._id !== id) : list);
+
+const normalizeCategory = (item: any): CategoryItem => ({
+  _id: item._id ?? item.id ?? undefined,
+  key: item.key ?? item.slug ?? "",
+  label: item.label ?? item.name ?? "",
+  description: item.description ?? undefined,
+  color: item.color ?? item.hex_color ?? undefined,
+  icon: item.icon ?? undefined,
+  type: item.type ?? undefined,
+  routeSlug: item.routeSlug ?? item.route_slug ?? undefined,
+  subcategories: (item.subcategories ?? item.sub_categories ?? []).map((sub: any) => ({
+    key: sub.key ?? sub.slug ?? normalizeSlug(sub.label ?? sub.name ?? ""),
+    label: sub.label ?? sub.name ?? "",
+    description: sub.description ?? undefined,
+    isActive: sub.isActive ?? sub.is_active ?? true,
+  })),
+  order: item.order ?? item.sort_order ?? 0,
+  isActive: item.isActive ?? item.is_active ?? true,
+  isDefault: item.isDefault ?? item.is_default ?? false,
+});
+
+const normalizeTeam = (team: any) => ({
+  _id: String(team._id ?? team.id ?? createLocalId()),
+  name: team.name ?? "",
+  shortName: team.shortName ?? team.short_name ?? "",
+  slug: team.slug ?? "",
+  logo: team.logo ?? "",
+  sportType: team.sportType ?? team.sport_type ?? "pilka_nozna",
+  league: team.league ?? "",
+  city: team.city ?? "",
+  stadium: team.stadium ?? "",
+  website: team.website ?? "",
+  isActive: team.isActive ?? team.is_active ?? true,
+});
+
+const normalizePlayer = (player: any) => ({
+  _id: String(player._id ?? player.id ?? createLocalId()),
+  fullName: player.fullName ?? player.full_name ?? "",
+  slug: player.slug ?? "",
+  teamId: player.teamId ?? player.team_id ?? undefined,
+  teamName: player.teamName ?? player.team_name ?? "",
+  sportType: player.sportType ?? player.sport_type ?? "pilka_nozna",
+  number: player.number ?? "",
+  position: player.position ?? "",
+  photo: player.photo ?? "",
+  bio: player.bio ?? "",
+  isActive: player.isActive ?? player.is_active ?? true,
+});
+
+const normalizePolitician = (politician: any) => ({
+  _id: String(politician._id ?? politician.id ?? createLocalId()),
+  fullName: politician.fullName ?? politician.full_name ?? "",
+  slug: politician.slug ?? "",
+  party: politician.party ?? "",
+  position: politician.position ?? "",
+  photo: politician.photo ?? "",
+  websiteUrl: politician.websiteUrl ?? politician.website_url ?? "",
+  facebookUrl: politician.facebookUrl ?? politician.facebook_url ?? "",
+  twitterUrl: politician.twitterUrl ?? politician.twitter_url ?? "",
+  bio: politician.bio ?? "",
+  isActive: politician.isActive ?? politician.is_active ?? true,
+});
+
+const normalizeInvestment = (inv: any) => ({
+  _id: String(inv._id ?? inv.id ?? createLocalId()),
+  projectName: inv.projectName ?? inv.project_name ?? "",
+  slug: inv.slug ?? "",
+  description: inv.description ?? "",
+  projectStatus: inv.projectStatus ?? inv.project_status ?? "planowana",
+  location: inv.location ?? "",
+  startDate: inv.startDate ?? inv.start_date ?? "",
+  endDate: inv.endDate ?? inv.end_date ?? "",
+  budget: inv.budget ?? "",
+  contractor: inv.contractor ?? "",
+  investor: inv.investor ?? "",
+  progressPercent: inv.progressPercent ?? inv.progress_percent ?? 0,
+  mainImageUrl: inv.mainImageUrl ?? inv.main_image_url ?? "",
+  isActive: inv.isActive ?? inv.is_active ?? true,
+});
+
+const normalizeEntity = (entity: any): CategoryEntityItem => ({
+  _id: String(entity._id ?? entity.id ?? createLocalId()),
+  categoryKey: entity.categoryKey ?? entity.category_key ?? "",
+  entityType: entity.entityType ?? entity.entity_type ?? "",
+  name: entity.name ?? "",
+  slug: entity.slug ?? "",
+  description: entity.description ?? undefined,
+  color: entity.color ?? undefined,
+  icon: entity.icon ?? undefined,
+  parentId: entity.parentId ?? entity.parent_id ?? undefined,
+  externalRef: entity.externalRef ?? entity.external_ref ?? undefined,
+  metadata: entity.metadata ?? undefined,
+  isActive: entity.isActive ?? entity.is_active ?? true,
+  order: entity.order ?? 0,
+});
+
+const normalizeHeroConfig = (data: any): HeroConfigItem[] => {
+  const items = Array.isArray(data) ? data : data?.items ?? [];
+  return items.map((item: any, index: number) => ({
+    itemId: String(item.itemId ?? item.item_id ?? item.id ?? item._id ?? ""),
+    order: item.order ?? item.sort_order ?? index + 1,
+    isVisible: item.isVisible ?? item.is_visible ?? true,
+  }));
+};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -388,62 +526,528 @@ export default function CategorySettingsSection() {
   const [showNewCategoryForm, setShowNewCategoryForm] = useState(false);
   const [newCategoryDraft, setNewCategoryDraft] = useState<Partial<CategoryItem>>({ label: "", key: "", type: "basic", isActive: true, order: 99 });
 
-  // Queries
-  const categories = useQuery(api.settings.getCategories) as CategoryItem[] | undefined;
-  const teams = useQuery(api.sportTeams.list, activeCategoryKey === "sport" ? {} : "skip") as any[] | undefined;
-  const players = useQuery(api.sportPlayers.list, activeCategoryKey === "sport" ? {} : "skip") as any[] | undefined;
-  const politicians = useQuery(api.politicians.list, activeCategoryKey === "polityka" ? {} : "skip") as any[] | undefined;
-  const investments = useQuery(api.investments.list, activeCategoryKey === "inwestycje" ? {} : "skip") as any[] | undefined;
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [politicians, setPoliticians] = useState<any[]>([]);
+  const [investments, setInvestments] = useState<any[]>([]);
+  const [categoryEntities, setCategoryEntities] = useState<CategoryEntityItem[]>([]);
+  const [sportHeroConfig, setSportHeroConfig] = useState<HeroConfigItem[] | undefined>(undefined);
+  const [politicsHeroConfig, setPoliticsHeroConfig] = useState<HeroConfigItem[] | undefined>(undefined);
+  const [investmentsHeroConfig, setInvestmentsHeroConfig] = useState<HeroConfigItem[] | undefined>(undefined);
   const hasEntitySections = activeCategoryKey in ENTITY_SECTION_CONFIG;
-  const categoryEntities = useQuery(
-    api.categoryEntities.byCategory,
-    hasEntitySections && activeCategoryKey !== "__new__" ? { categoryKey: activeCategoryKey } : "skip",
-  ) as CategoryEntityItem[] | undefined;
+  const fallbackCategories = useMemo(() => buildFallbackCategories(), []);
 
-  // Hero config queries
-  const sportHeroConfig = useQuery(api.categoryHeroConfig.getByCategory, activeCategoryKey === "sport" ? { categoryKey: "sport" } : "skip");
-  const politicsHeroConfig = useQuery(api.categoryHeroConfig.getByCategory, activeCategoryKey === "polityka" ? { categoryKey: "polityka" } : "skip");
-  const investmentsHeroConfig = useQuery(api.categoryHeroConfig.getByCategory, activeCategoryKey === "inwestycje" ? { categoryKey: "inwestycje" } : "skip");
-
-  // Mutations
-  const saveCategory = useMutation(api.settings.saveCategory);
-  const deleteCategory = useMutation(api.settings.deleteCategory);
-  const seedDefaultCategories = useMutation(api.settings.seedDefaultCategories);
-  const saveTeam = useMutation(api.sportTeams.save);
-  const removeTeam = useMutation(api.sportTeams.remove);
-  const savePlayer = useMutation(api.sportPlayers.save);
-  const removePlayer = useMutation(api.sportPlayers.remove);
-  const savePolitician = useMutation(api.politicians.save);
-  const removePolitician = useMutation(api.politicians.remove);
-  const saveInvestment = useMutation(api.investments.save);
-  const removeInvestment = useMutation(api.investments.remove);
-  const seedSportTeams = useMutation(api.sportTeams.seedSportTeams);
-  const seedSportPlayers = useMutation(api.sportPlayers.seedSportPlayers);
-  const seedInvestments = useMutation(api.investments.seedInvestments);
-  const seedPoliticians = useMutation(api.politicians.seedPoliticians);
-  const seedCategoryEntities = useMutation(api.categoryEntities.seedCategoryEntities);
-  const saveCategoryEntity = useMutation(api.categoryEntities.save);
-  const removeCategoryEntity = useMutation(api.categoryEntities.remove);
-  const upsertHeroConfig = useMutation(api.categoryHeroConfig.upsertForCategory);
-
-  // Auto-seed all reference data on first mount
   useEffect(() => {
-    void seedSportTeams({}).catch(() => {});
-    void seedSportPlayers({}).catch(() => {});
-    void seedPoliticians({}).catch(() => {});
-    void seedInvestments({}).catch(() => {});
-    void seedCategoryEntities({}).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/categories");
+        if (!active) return;
+        setCategories(response.map(normalizeCategory));
+      } catch (error) {
+        console.warn("Admin categories API unavailable", error);
+        if (active) setCategories(fallbackCategories);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [fallbackCategories]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "sport") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/sport-teams");
+        if (active) setTeams(response.map(normalizeTeam));
+      } catch (error) {
+        console.warn("Sport teams API unavailable", error);
+        if (active) setTeams([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "sport") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/sport-players");
+        if (active) setPlayers(response.map(normalizePlayer));
+      } catch (error) {
+        console.warn("Sport players API unavailable", error);
+        if (active) setPlayers([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "polityka") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/politicians");
+        if (active) setPoliticians(response.map(normalizePolitician));
+      } catch (error) {
+        console.warn("Politicians API unavailable", error);
+        if (active) setPoliticians([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "inwestycje") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/investments");
+        if (active) setInvestments(response.map(normalizeInvestment));
+      } catch (error) {
+        console.warn("Investments API unavailable", error);
+        if (active) setInvestments([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (!hasEntitySections || activeCategoryKey === "__new__") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>(`/admin/category-entities?category_key=${activeCategoryKey}`);
+        if (active) setCategoryEntities(response.map(normalizeEntity));
+      } catch (error) {
+        console.warn("Category entities API unavailable", error);
+        if (active) setCategoryEntities([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey, hasEntitySections]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "sport") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/category-hero-config/sport");
+        if (active) setSportHeroConfig(normalizeHeroConfig(response));
+      } catch (error) {
+        console.warn("Sport hero config API unavailable", error);
+        if (active) setSportHeroConfig([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "polityka") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/category-hero-config/polityka");
+        if (active) setPoliticsHeroConfig(normalizeHeroConfig(response));
+      } catch (error) {
+        console.warn("Politics hero config API unavailable", error);
+        if (active) setPoliticsHeroConfig([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  useEffect(() => {
+    if (activeCategoryKey !== "inwestycje") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/category-hero-config/inwestycje");
+        if (active) setInvestmentsHeroConfig(normalizeHeroConfig(response));
+      } catch (error) {
+        console.warn("Investments hero config API unavailable", error);
+        if (active) setInvestmentsHeroConfig([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [activeCategoryKey]);
+
+  const saveCategory = async (payload: {
+    id?: string;
+    key: string;
+    label: string;
+    description?: string;
+    color?: string;
+    icon?: string;
+    type?: "basic" | "advanced";
+    routeSlug?: string;
+    subcategories?: AdminCategorySubcategory[];
+    order: number;
+    isActive: boolean;
+    isDefault?: boolean;
+  }) => {
+    const endpoint = payload.id ? `/admin/categories/${payload.id}` : "/admin/categories";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      key: payload.key,
+      label: payload.label,
+      description: payload.description,
+      color: payload.color,
+      icon: payload.icon,
+      type: payload.type,
+      route_slug: payload.routeSlug,
+      subcategories: payload.subcategories?.map((sub) => ({
+        key: sub.key,
+        label: sub.label,
+        description: sub.description,
+        is_active: sub.isActive !== false,
+      })),
+      order: payload.order,
+      is_active: payload.isActive,
+      is_default: payload.isDefault,
+    };
+    const localItem: CategoryItem = {
+      _id: payload.id ?? createLocalId(),
+      key: payload.key,
+      label: payload.label,
+      description: payload.description,
+      color: payload.color,
+      icon: payload.icon,
+      type: payload.type,
+      routeSlug: payload.routeSlug,
+      subcategories: payload.subcategories,
+      order: payload.order,
+      isActive: payload.isActive,
+      isDefault: payload.isDefault,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizeCategory(response);
+      setCategories((prev) => {
+        const index = prev.findIndex((cat) => (normalized._id && cat._id === normalized._id) || cat.key === normalized.key);
+        if (index >= 0) {
+          const next = [...prev];
+          next[index] = normalized;
+          return next;
+        }
+        return [...prev, normalized];
+      });
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Admin category save failed", error);
+      setCategories((prev) => {
+        const index = prev.findIndex((cat) => (localItem._id && cat._id === localItem._id) || cat.key === localItem.key);
+        if (index >= 0) {
+          const next = [...prev];
+          next[index] = localItem;
+          return next;
+        }
+        return [...prev, localItem];
+      });
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const deleteCategory = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/categories/${id}`, { method: "DELETE" });
+      setCategories((prev) => prev.filter((cat) => cat._id !== id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Admin category delete failed", error);
+      setCategories((prev) => prev.filter((cat) => cat._id !== id));
+      return { isLocal: true };
+    }
+  };
+
+  const saveTeam = async (payload: SportTeamForm) => {
+    const endpoint = payload.id ? `/admin/sport-teams/${payload.id}` : "/admin/sport-teams";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      name: payload.name,
+      short_name: payload.shortName,
+      slug: payload.slug,
+      logo: payload.logo,
+      sport_type: payload.sportType,
+      league: payload.league,
+      city: payload.city,
+      stadium: payload.stadium,
+      website: payload.website,
+      is_active: payload.isActive,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizeTeam(response);
+      setTeams((prev) => upsertById(prev, normalized));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Sport team save failed", error);
+      const localItem = normalizeTeam(payload);
+      setTeams((prev) => upsertById(prev, localItem));
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const removeTeam = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/sport-teams/${id}`, { method: "DELETE" });
+      setTeams((prev) => removeById(prev, id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Sport team delete failed", error);
+      setTeams((prev) => removeById(prev, id));
+      return { isLocal: true };
+    }
+  };
+
+  const savePlayer = async (payload: SportPlayerForm) => {
+    const endpoint = payload.id ? `/admin/sport-players/${payload.id}` : "/admin/sport-players";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      full_name: payload.fullName,
+      slug: payload.slug,
+      team_id: payload.teamId,
+      team_name: payload.teamName,
+      sport_type: payload.sportType,
+      number: payload.number,
+      position: payload.position,
+      photo: payload.photo,
+      bio: payload.bio,
+      is_active: payload.isActive,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizePlayer(response);
+      setPlayers((prev) => upsertById(prev, normalized));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Sport player save failed", error);
+      const localItem = normalizePlayer(payload);
+      setPlayers((prev) => upsertById(prev, localItem));
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const removePlayer = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/sport-players/${id}`, { method: "DELETE" });
+      setPlayers((prev) => removeById(prev, id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Sport player delete failed", error);
+      setPlayers((prev) => removeById(prev, id));
+      return { isLocal: true };
+    }
+  };
+
+  const savePolitician = async (payload: PoliticianForm) => {
+    const endpoint = payload.id ? `/admin/politicians/${payload.id}` : "/admin/politicians";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      full_name: payload.fullName,
+      slug: payload.slug,
+      party: payload.party,
+      position: payload.position,
+      photo: payload.photo,
+      website_url: payload.websiteUrl,
+      facebook_url: payload.facebookUrl,
+      twitter_url: payload.twitterUrl,
+      bio: payload.bio,
+      is_active: payload.isActive,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizePolitician(response);
+      setPoliticians((prev) => upsertById(prev, normalized));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Politician save failed", error);
+      const localItem = normalizePolitician(payload);
+      setPoliticians((prev) => upsertById(prev, localItem));
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const removePolitician = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/politicians/${id}`, { method: "DELETE" });
+      setPoliticians((prev) => removeById(prev, id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Politician delete failed", error);
+      setPoliticians((prev) => removeById(prev, id));
+      return { isLocal: true };
+    }
+  };
+
+  const saveInvestment = async (payload: InvestmentForm) => {
+    const endpoint = payload.id ? `/admin/investments/${payload.id}` : "/admin/investments";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      project_name: payload.projectName,
+      slug: payload.slug,
+      description: payload.description,
+      project_status: payload.projectStatus,
+      location: payload.location,
+      start_date: payload.startDate,
+      end_date: payload.endDate,
+      budget: payload.budget,
+      contractor: payload.contractor,
+      investor: payload.investor,
+      progress_percent: payload.progressPercent,
+      main_image_url: payload.mainImageUrl,
+      is_active: payload.isActive,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizeInvestment(response);
+      setInvestments((prev) => upsertById(prev, normalized));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Investment save failed", error);
+      const localItem = normalizeInvestment(payload);
+      setInvestments((prev) => upsertById(prev, localItem));
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const removeInvestment = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/investments/${id}`, { method: "DELETE" });
+      setInvestments((prev) => removeById(prev, id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Investment delete failed", error);
+      setInvestments((prev) => removeById(prev, id));
+      return { isLocal: true };
+    }
+  };
+
+  const saveCategoryEntity = async (payload: {
+    id?: string;
+    categoryKey: string;
+    entityType: string;
+    name: string;
+    slug: string;
+    description?: string;
+    color?: string;
+    icon?: string;
+    parentId?: string;
+    externalRef?: string;
+    metadata?: string;
+    isActive: boolean;
+    order: number;
+  }) => {
+    const endpoint = payload.id ? `/admin/category-entities/${payload.id}` : "/admin/category-entities";
+    const method = payload.id ? "PUT" : "POST";
+    const body = {
+      id: payload.id,
+      category_key: payload.categoryKey,
+      entity_type: payload.entityType,
+      name: payload.name,
+      slug: payload.slug,
+      description: payload.description,
+      color: payload.color,
+      icon: payload.icon,
+      parent_id: payload.parentId,
+      external_ref: payload.externalRef,
+      metadata: payload.metadata,
+      is_active: payload.isActive,
+      order: payload.order,
+    };
+    try {
+      const response = await apiFetch<any>(endpoint, { method, body });
+      const normalized = normalizeEntity(response);
+      setCategoryEntities((prev) => upsertById(prev, normalized));
+      return { item: normalized, isLocal: false };
+    } catch (error) {
+      console.warn("Category entity save failed", error);
+      const localItem = normalizeEntity(payload);
+      setCategoryEntities((prev) => upsertById(prev, localItem));
+      return { item: localItem, isLocal: true };
+    }
+  };
+
+  const removeCategoryEntity = async ({ id }: { id: string }) => {
+    try {
+      await apiFetch<void>(`/admin/category-entities/${id}`, { method: "DELETE" });
+      setCategoryEntities((prev) => removeById(prev, id));
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Category entity delete failed", error);
+      setCategoryEntities((prev) => removeById(prev, id));
+      return { isLocal: true };
+    }
+  };
+
+  const upsertHeroConfig = async ({ categoryKey, itemType, items }: {
+    categoryKey: string;
+    itemType: string;
+    items: HeroConfigItem[];
+  }) => {
+    const body = {
+      category_key: categoryKey,
+      item_type: itemType,
+      items: items.map((item) => ({
+        item_id: item.itemId,
+        order: item.order,
+        is_visible: item.isVisible,
+      })),
+    };
+    const setConfig = (data: HeroConfigItem[]) => {
+      if (categoryKey === "sport") setSportHeroConfig(data);
+      if (categoryKey === "polityka") setPoliticsHeroConfig(data);
+      if (categoryKey === "inwestycje") setInvestmentsHeroConfig(data);
+    };
+    try {
+      const response = await apiFetch<any>(`/admin/category-hero-config/${categoryKey}`, { method: "PUT", body });
+      const normalized = normalizeHeroConfig(response);
+      setConfig(normalized);
+      return { isLocal: false };
+    } catch (error) {
+      console.warn("Category hero config save failed", error);
+      setConfig(items);
+      return { isLocal: true };
+    }
+  };
 
   const resolvedCategories = useMemo(() => {
     if (categories && categories.length > 0) return categories;
-    return ADMIN_CATEGORY_DEFINITIONS.map((cat, i) => ({
-      key: cat.value, label: cat.label, description: cat.description,
-      color: cat.color, icon: "", type: cat.type, routeSlug: cat.routeSlug,
-      subcategories: cat.subcategories, order: i + 1, isActive: true, isDefault: true,
-    }));
-  }, [categories]);
+    return fallbackCategories;
+  }, [categories, fallbackCategories]);
 
   const standardCategories = useMemo(() => resolvedCategories.filter(c => !ADVANCED_KEYS.has(c.key)), [resolvedCategories]);
   const advancedCategories = useMemo(() => resolvedCategories.filter(c => ADVANCED_KEYS.has(c.key)), [resolvedCategories]);
@@ -467,48 +1071,53 @@ export default function CategorySettingsSection() {
     if (!draftCategory.key.trim() || !draftCategory.label.trim()) {
       toast.error("Klucz i nazwa kategorii są wymagane"); return;
     }
-    try {
-      await saveCategory({
-        id: draftCategory._id,
-        key: draftCategory.key.trim(),
-        label: draftCategory.label.trim(),
-        description: draftCategory.description?.trim() || undefined,
-        color: draftCategory.color || undefined,
-        icon: draftCategory.icon?.trim() || undefined,
-        type: draftCategory.type,
-        routeSlug: draftCategory.routeSlug?.trim() || undefined,
-        subcategories: draftCategory.subcategories?.filter((s) => s.label.trim()).map((s) => ({
-          key: s.key.trim() || normalizeSlug(s.label),
-          label: s.label.trim(),
-          description: s.description?.trim() || undefined,
-          isActive: s.isActive !== false,
-        })),
-        order: draftCategory.order,
-        isActive: draftCategory.isActive,
-        isDefault: draftCategory.isDefault,
-      });
+    const result = await saveCategory({
+      id: draftCategory._id,
+      key: draftCategory.key.trim(),
+      label: draftCategory.label.trim(),
+      description: draftCategory.description?.trim() || undefined,
+      color: draftCategory.color || undefined,
+      icon: draftCategory.icon?.trim() || undefined,
+      type: draftCategory.type,
+      routeSlug: draftCategory.routeSlug?.trim() || undefined,
+      subcategories: draftCategory.subcategories?.filter((s) => s.label.trim()).map((s) => ({
+        key: s.key.trim() || normalizeSlug(s.label),
+        label: s.label.trim(),
+        description: s.description?.trim() || undefined,
+        isActive: s.isActive !== false,
+      })),
+      order: draftCategory.order,
+      isActive: draftCategory.isActive,
+      isDefault: draftCategory.isDefault,
+    });
+    setDraftCategory(result.item);
+    if (result.isLocal) {
+      toast.message("Kategoria zapisana lokalnie (API niedostępne)");
+    } else {
       toast.success("Kategoria zapisana");
-    } catch { toast.error("Nie udało się zapisać kategorii"); }
+    }
   };
 
   const handleToggleActive = async (cat: CategoryItem) => {
-    try {
-      await saveCategory({
-        id: cat._id,
-        key: cat.key,
-        label: cat.label,
-        description: cat.description,
-        color: cat.color,
-        icon: cat.icon,
-        type: cat.type,
-        routeSlug: cat.routeSlug,
-        subcategories: cat.subcategories,
-        order: cat.order,
-        isActive: !cat.isActive,
-        isDefault: cat.isDefault,
-      });
+    const result = await saveCategory({
+      id: cat._id,
+      key: cat.key,
+      label: cat.label,
+      description: cat.description,
+      color: cat.color,
+      icon: cat.icon,
+      type: cat.type,
+      routeSlug: cat.routeSlug,
+      subcategories: cat.subcategories,
+      order: cat.order,
+      isActive: !cat.isActive,
+      isDefault: cat.isDefault,
+    });
+    if (result.isLocal) {
+      toast.message("Status kategorii zapisany lokalnie (API niedostępne)");
+    } else {
       toast.success(cat.isActive ? "Kategoria ukryta" : "Kategoria aktywowana");
-    } catch { toast.error("Nie udało się zmienić statusu kategorii"); }
+    }
   };
 
   const handleMoveOrder = async (cat: CategoryItem, direction: "up" | "down") => {
@@ -521,154 +1130,170 @@ export default function CategorySettingsSection() {
       toast.error("Nie można zmienić kolejności kategorii systemowych bez zapisu w bazie. Najpierw zapisz ustawienia kategorii.");
       return;
     }
-    try {
-      await Promise.all([
-        saveCategory({ id: cat._id, key: cat.key, label: cat.label, description: cat.description, color: cat.color, icon: cat.icon, type: cat.type, routeSlug: cat.routeSlug, subcategories: cat.subcategories, order: swapCat.order, isActive: cat.isActive, isDefault: cat.isDefault }),
-        saveCategory({ id: swapCat._id, key: swapCat.key, label: swapCat.label, description: swapCat.description, color: swapCat.color, icon: swapCat.icon, type: swapCat.type, routeSlug: swapCat.routeSlug, subcategories: swapCat.subcategories, order: cat.order, isActive: swapCat.isActive, isDefault: swapCat.isDefault }),
-      ]);
+    const results = await Promise.all([
+      saveCategory({ id: cat._id, key: cat.key, label: cat.label, description: cat.description, color: cat.color, icon: cat.icon, type: cat.type, routeSlug: cat.routeSlug, subcategories: cat.subcategories, order: swapCat.order, isActive: cat.isActive, isDefault: cat.isDefault }),
+      saveCategory({ id: swapCat._id, key: swapCat.key, label: swapCat.label, description: swapCat.description, color: swapCat.color, icon: swapCat.icon, type: swapCat.type, routeSlug: swapCat.routeSlug, subcategories: swapCat.subcategories, order: cat.order, isActive: swapCat.isActive, isDefault: swapCat.isDefault }),
+    ]);
+    if (results.some((result) => result.isLocal)) {
+      toast.message("Kolejność zapisana lokalnie (API niedostępne)");
+    } else {
       toast.success("Kolejność zmieniona");
-    } catch { toast.error("Nie udało się zmienić kolejności"); }
+    }
   };
 
   const handleDeleteCategory = async () => {
     if (!draftCategory?._id) return;
     if (draftCategory.isDefault) { toast.error("Systemowej kategorii nie można usunąć"); return; }
-    try {
-      await deleteCategory({ id: draftCategory._id });
+    const result = await deleteCategory({ id: draftCategory._id });
+    if (result.isLocal) {
+      toast.message("Kategoria usunięta lokalnie (API niedostępne)");
+    } else {
       toast.success("Kategoria usunięta");
-    } catch { toast.error("Nie udało się usunąć kategorii"); }
+    }
   };
 
   const handleAddNewCategory = async () => {
     if (!newCategoryDraft.label?.trim() || !newCategoryDraft.key?.trim()) {
       toast.error("Klucz i nazwa są wymagane"); return;
     }
-    try {
-      await saveCategory({
-        key: newCategoryDraft.key!.trim(),
-        label: newCategoryDraft.label!.trim(),
-        description: newCategoryDraft.description?.trim() || undefined,
-        color: newCategoryDraft.color || "#3b82f6",
-        type: newCategoryDraft.type || "basic",
-        order: newCategoryDraft.order ?? 99,
-        isActive: true,
-        isDefault: false,
-      });
+    const result = await saveCategory({
+      key: newCategoryDraft.key!.trim(),
+      label: newCategoryDraft.label!.trim(),
+      description: newCategoryDraft.description?.trim() || undefined,
+      color: newCategoryDraft.color || "#3b82f6",
+      type: newCategoryDraft.type || "basic",
+      order: newCategoryDraft.order ?? 99,
+      isActive: true,
+      isDefault: false,
+    });
+    if (result.isLocal) {
+      toast.message("Kategoria dodana lokalnie (API niedostępne)");
+    } else {
       toast.success("Kategoria dodana");
-      setShowNewCategoryForm(false);
-      setNewCategoryDraft({ label: "", key: "", type: "basic", isActive: true, order: 99 });
-    } catch { toast.error("Nie udało się dodać kategorii"); }
+    }
+    setShowNewCategoryForm(false);
+    setNewCategoryDraft({ label: "", key: "", type: "basic", isActive: true, order: 99 });
   };
 
   const handleSaveTeam = async () => {
     if (!teamDraft.name.trim()) { toast.error("Nazwa drużyny jest wymagana"); return; }
-    try {
-      await saveTeam({
-        id: teamDraft.id,
-        name: teamDraft.name.trim(),
-        shortName: teamDraft.shortName.trim() || undefined,
-        slug: teamDraft.slug || normalizeSlug(teamDraft.name),
-        logo: teamDraft.logo.trim() || undefined,
-        sportType: teamDraft.sportType,
-        league: teamDraft.league.trim() || undefined,
-        city: teamDraft.city.trim() || undefined,
-        stadium: teamDraft.stadium.trim() || undefined,
-        website: teamDraft.website.trim() || undefined,
-        isActive: teamDraft.isActive,
-      });
+    const result = await saveTeam({
+      id: teamDraft.id,
+      name: teamDraft.name.trim(),
+      shortName: teamDraft.shortName.trim(),
+      slug: teamDraft.slug || normalizeSlug(teamDraft.name),
+      logo: teamDraft.logo.trim(),
+      sportType: teamDraft.sportType,
+      league: teamDraft.league.trim(),
+      city: teamDraft.city.trim(),
+      stadium: teamDraft.stadium.trim(),
+      website: teamDraft.website.trim(),
+      isActive: teamDraft.isActive,
+    });
+    if (result.isLocal) {
+      toast.message("Drużyna zapisana lokalnie (API niedostępne)");
+    } else {
       toast.success(teamDraft.id ? "Drużyna zaktualizowana" : "Drużyna dodana");
-      setTeamDraft(createTeamDraft());
-    } catch { toast.error("Nie udało się zapisać drużyny"); }
+    }
+    setTeamDraft(createTeamDraft());
   };
 
   const handleSavePlayer = async () => {
     if (!playerDraft.fullName.trim()) { toast.error("Imię i nazwisko są wymagane"); return; }
-    try {
-      await savePlayer({
-        id: playerDraft.id,
-        fullName: playerDraft.fullName.trim(),
-        slug: playerDraft.slug || normalizeSlug(playerDraft.fullName),
-        teamId: playerDraft.teamId,
-        teamName: playerDraft.teamName.trim() || undefined,
-        sportType: playerDraft.sportType,
-        number: playerDraft.number.trim() || undefined,
-        position: playerDraft.position.trim() || undefined,
-        photo: playerDraft.photo.trim() || undefined,
-        bio: playerDraft.bio.trim() || undefined,
-        isActive: playerDraft.isActive,
-      });
+    const result = await savePlayer({
+      id: playerDraft.id,
+      fullName: playerDraft.fullName.trim(),
+      slug: playerDraft.slug || normalizeSlug(playerDraft.fullName),
+      teamId: playerDraft.teamId,
+      teamName: playerDraft.teamName.trim(),
+      sportType: playerDraft.sportType,
+      number: playerDraft.number.trim(),
+      position: playerDraft.position.trim(),
+      photo: playerDraft.photo.trim(),
+      bio: playerDraft.bio.trim(),
+      isActive: playerDraft.isActive,
+    });
+    if (result.isLocal) {
+      toast.message("Zawodnik zapisany lokalnie (API niedostępne)");
+    } else {
       toast.success(playerDraft.id ? "Zawodnik zaktualizowany" : "Zawodnik dodany");
-      setPlayerDraft(createPlayerDraft());
-    } catch { toast.error("Nie udało się zapisać zawodnika"); }
+    }
+    setPlayerDraft(createPlayerDraft());
   };
 
   const handleSavePolitician = async () => {
     if (!politicianDraft.fullName.trim()) { toast.error("Imię i nazwisko są wymagane"); return; }
-    try {
-      await savePolitician({
-        id: politicianDraft.id,
-        fullName: politicianDraft.fullName.trim(),
-        slug: politicianDraft.slug || normalizeSlug(politicianDraft.fullName),
-        party: politicianDraft.party.trim() || undefined,
-        position: politicianDraft.position.trim() || undefined,
-        photo: politicianDraft.photo.trim() || undefined,
-        websiteUrl: politicianDraft.websiteUrl.trim() || undefined,
-        facebookUrl: politicianDraft.facebookUrl.trim() || undefined,
-        twitterUrl: politicianDraft.twitterUrl.trim() || undefined,
-        bio: politicianDraft.bio.trim() || undefined,
-        isActive: politicianDraft.isActive,
-      });
+    const result = await savePolitician({
+      id: politicianDraft.id,
+      fullName: politicianDraft.fullName.trim(),
+      slug: politicianDraft.slug || normalizeSlug(politicianDraft.fullName),
+      party: politicianDraft.party.trim(),
+      position: politicianDraft.position.trim(),
+      photo: politicianDraft.photo.trim(),
+      websiteUrl: politicianDraft.websiteUrl.trim(),
+      facebookUrl: politicianDraft.facebookUrl.trim(),
+      twitterUrl: politicianDraft.twitterUrl.trim(),
+      bio: politicianDraft.bio.trim(),
+      isActive: politicianDraft.isActive,
+    });
+    if (result.isLocal) {
+      toast.message("Polityk zapisany lokalnie (API niedostępne)");
+    } else {
       toast.success(politicianDraft.id ? "Polityk zaktualizowany" : "Polityk dodany");
-      setPoliticianDraft(createPoliticianDraft());
-    } catch { toast.error("Nie udało się zapisać polityka"); }
+    }
+    setPoliticianDraft(createPoliticianDraft());
   };
 
   const handleSaveInvestment = async () => {
     if (!investmentDraft.projectName.trim()) { toast.error("Nazwa inwestycji jest wymagana"); return; }
-    try {
-      await saveInvestment({
-        id: investmentDraft.id,
-        projectName: investmentDraft.projectName.trim(),
-        slug: investmentDraft.slug || normalizeSlug(investmentDraft.projectName),
-        description: investmentDraft.description.trim() || undefined,
-        projectStatus: investmentDraft.projectStatus,
-        location: investmentDraft.location.trim() || undefined,
-        startDate: investmentDraft.startDate.trim() || undefined,
-        endDate: investmentDraft.endDate.trim() || undefined,
-        budget: investmentDraft.budget.trim() || undefined,
-        contractor: investmentDraft.contractor.trim() || undefined,
-        investor: investmentDraft.investor.trim() || undefined,
-        progressPercent: investmentDraft.progressPercent || undefined,
-        mainImageUrl: investmentDraft.mainImageUrl.trim() || undefined,
-        isActive: investmentDraft.isActive,
-      });
+    const result = await saveInvestment({
+      id: investmentDraft.id,
+      projectName: investmentDraft.projectName.trim(),
+      slug: investmentDraft.slug || normalizeSlug(investmentDraft.projectName),
+      description: investmentDraft.description.trim(),
+      projectStatus: investmentDraft.projectStatus,
+      location: investmentDraft.location.trim(),
+      startDate: investmentDraft.startDate.trim(),
+      endDate: investmentDraft.endDate.trim(),
+      budget: investmentDraft.budget.trim(),
+      contractor: investmentDraft.contractor.trim(),
+      investor: investmentDraft.investor.trim(),
+      progressPercent: investmentDraft.progressPercent,
+      mainImageUrl: investmentDraft.mainImageUrl.trim(),
+      isActive: investmentDraft.isActive,
+    });
+    if (result.isLocal) {
+      toast.message("Inwestycja zapisana lokalnie (API niedostępne)");
+    } else {
       toast.success(investmentDraft.id ? "Inwestycja zaktualizowana" : "Inwestycja dodana");
-      setInvestmentDraft(createInvestmentDraft());
-    } catch { toast.error("Nie udało się zapisać inwestycji"); }
+    }
+    setInvestmentDraft(createInvestmentDraft());
   };
 
   const handleSaveEntity = async (entityType: string) => {
     const draft = entityDrafts[entityType] ?? createEntityDraft(entityType);
     if (!draft.name.trim()) { toast.error("Nazwa jest wymagana"); return; }
-    try {
-      await saveCategoryEntity({
-        id: draft.id,
-        categoryKey: activeCategoryKey,
-        entityType: draft.entityType,
-        name: draft.name.trim(),
-        slug: draft.slug || normalizeSlug(draft.name),
-        description: draft.description.trim() || undefined,
-        color: draft.color || undefined,
-        icon: draft.icon.trim() || undefined,
-        parentId: draft.parentId,
-        externalRef: draft.externalRef.trim() || undefined,
-        metadata: draft.metadata.trim() || undefined,
-        isActive: draft.isActive,
-        order: draft.order,
-      });
+    const result = await saveCategoryEntity({
+      id: draft.id,
+      categoryKey: activeCategoryKey,
+      entityType: draft.entityType,
+      name: draft.name.trim(),
+      slug: draft.slug || normalizeSlug(draft.name),
+      description: draft.description.trim() || undefined,
+      color: draft.color || undefined,
+      icon: draft.icon.trim() || undefined,
+      parentId: draft.parentId,
+      externalRef: draft.externalRef.trim() || undefined,
+      metadata: draft.metadata.trim() || undefined,
+      isActive: draft.isActive,
+      order: draft.order,
+    });
+    if (result.isLocal) {
+      toast.message("Encja zapisana lokalnie (API niedostępne)");
+    } else {
       toast.success("Encja zapisana");
-      setEntityDrafts(prev => ({ ...prev, [entityType]: createEntityDraft(entityType) }));
-    } catch { toast.error("Nie udało się zapisać encji"); }
+    }
+    setEntityDrafts(prev => ({ ...prev, [entityType]: createEntityDraft(entityType) }));
   };
 
   const handleEditEntity = (entity: CategoryEntityItem) => {
@@ -696,6 +1321,51 @@ export default function CategorySettingsSection() {
       ...prev,
       [entityType]: { ...(prev[entityType] ?? createEntityDraft(entityType)), ...updates },
     }));
+  };
+
+  const handleRemoveTeam = async (id: string) => {
+    const result = await removeTeam({ id });
+    if (result.isLocal) {
+      toast.message("Drużyna usunięta lokalnie (API niedostępne)");
+    } else {
+      toast.success("Drużyna usunięta");
+    }
+  };
+
+  const handleRemovePlayer = async (id: string) => {
+    const result = await removePlayer({ id });
+    if (result.isLocal) {
+      toast.message("Zawodnik usunięty lokalnie (API niedostępne)");
+    } else {
+      toast.success("Zawodnik usunięty");
+    }
+  };
+
+  const handleRemovePolitician = async (id: string) => {
+    const result = await removePolitician({ id });
+    if (result.isLocal) {
+      toast.message("Polityk usunięty lokalnie (API niedostępne)");
+    } else {
+      toast.success("Polityk usunięty");
+    }
+  };
+
+  const handleRemoveInvestment = async (id: string) => {
+    const result = await removeInvestment({ id });
+    if (result.isLocal) {
+      toast.message("Inwestycja usunięta lokalnie (API niedostępne)");
+    } else {
+      toast.success("Inwestycja usunięta");
+    }
+  };
+
+  const handleRemoveEntity = async (id: string) => {
+    const result = await removeCategoryEntity({ id });
+    if (result.isLocal) {
+      toast.message("Encja usunięta lokalnie (API niedostępne)");
+    } else {
+      toast.success("Encja usunięta");
+    }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -938,7 +1608,7 @@ export default function CategorySettingsSection() {
                         <button type="button" onClick={() => setTeamDraft({ id: team._id, name: team.name, shortName: team.shortName ?? "", slug: team.slug, logo: team.logo ?? "", sportType: team.sportType, league: team.league ?? "", city: team.city ?? "", stadium: team.stadium ?? "", website: team.website ?? "", isActive: team.isActive !== false })} className="rounded-lg bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" onClick={() => void removeTeam({ id: team._id }).then(() => toast.success("Drużyna usunięta")).catch(() => toast.error("Błąd"))} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
+                        <button type="button" onClick={() => void handleRemoveTeam(team._id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -974,7 +1644,7 @@ export default function CategorySettingsSection() {
                       <span>Drużyna</span>
                       <select value={playerDraft.teamId ?? ""} onChange={(e) => {
                         const team = (teams ?? []).find((t: any) => t._id === e.target.value);
-                        setPlayerDraft((d) => ({ ...d, teamId: (e.target.value || undefined) as Id<"sport_teams"> | undefined, teamName: team?.name ?? "" }));
+                        setPlayerDraft((d) => ({ ...d, teamId: (e.target.value || undefined) as string | undefined, teamName: team?.name ?? "" }));
                       }} className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm outline-none">
                         <option value="">Bez drużyny</option>
                         {(teams ?? []).map((t: any) => <option key={t._id} value={t._id}>{t.name}</option>)}
@@ -1023,7 +1693,7 @@ export default function CategorySettingsSection() {
                         <button type="button" onClick={() => setPlayerDraft({ id: player._id, fullName: player.fullName, slug: player.slug, teamId: player.teamId, teamName: player.teamName ?? "", sportType: player.sportType, number: player.number ?? "", position: player.position ?? "", photo: player.photo ?? "", bio: player.bio ?? "", isActive: player.isActive !== false })} className="rounded-lg bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" onClick={() => void removePlayer({ id: player._id }).then(() => toast.success("Zawodnik usunięty")).catch(() => toast.error("Błąd"))} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
+                        <button type="button" onClick={() => void handleRemovePlayer(player._id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -1086,7 +1756,7 @@ export default function CategorySettingsSection() {
                         <button type="button" onClick={() => setPoliticianDraft({ id: politician._id, fullName: politician.fullName, slug: politician.slug, party: politician.party ?? "", position: politician.position ?? "", photo: politician.photo ?? "", websiteUrl: politician.websiteUrl ?? "", facebookUrl: politician.facebookUrl ?? "", twitterUrl: politician.twitterUrl ?? "", bio: politician.bio ?? "", isActive: politician.isActive !== false })} className="rounded-lg bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" onClick={() => void removePolitician({ id: politician._id }).then(() => toast.success("Polityk usunięty")).catch(() => toast.error("Błąd"))} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
+                        <button type="button" onClick={() => void handleRemovePolitician(politician._id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -1174,7 +1844,7 @@ export default function CategorySettingsSection() {
                         <button type="button" onClick={() => setInvestmentDraft({ id: inv._id, projectName: inv.projectName, slug: inv.slug, description: inv.description ?? "", projectStatus: inv.projectStatus, location: inv.location ?? "", startDate: inv.startDate ?? "", endDate: inv.endDate ?? "", budget: inv.budget ?? "", contractor: inv.contractor ?? "", investor: inv.investor ?? "", progressPercent: inv.progressPercent ?? 0, mainImageUrl: inv.mainImageUrl ?? "", isActive: inv.isActive !== false })} className="rounded-lg bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" onClick={() => void removeInvestment({ id: inv._id }).then(() => toast.success("Inwestycja usunięta")).catch(() => toast.error("Błąd"))} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
+                        <button type="button" onClick={() => void handleRemoveInvestment(inv._id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -1232,7 +1902,7 @@ export default function CategorySettingsSection() {
                         {section.supportsParent && (
                           <label className="space-y-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300 md:col-span-2">
                             <span>Powiązanie nadrzędne</span>
-                            <select value={draft.parentId ?? ""} onChange={(e) => updateEntityDraft(section.type, { entityType: section.type, parentId: (e.target.value || undefined) as Id<"category_entities"> | undefined })} className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm outline-none">
+                            <select value={draft.parentId ?? ""} onChange={(e) => updateEntityDraft(section.type, { entityType: section.type, parentId: (e.target.value || undefined) as string | undefined })} className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm outline-none">
                               <option value="">Bez powiązania</option>
                               {parentOptions.map((e) => <option key={e._id} value={e._id}>{e.name} ({e.entityType})</option>)}
                             </select>
@@ -1265,7 +1935,7 @@ export default function CategorySettingsSection() {
                               <button type="button" onClick={() => handleEditEntity(entity)} className="rounded-lg bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200">
                                 <Pencil className="h-3.5 w-3.5" />
                               </button>
-                              <button type="button" onClick={() => void removeCategoryEntity({ id: entity._id }).then(() => toast.success("Encja usunięta")).catch(() => toast.error("Błąd"))} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
+                              <button type="button" onClick={() => void handleRemoveEntity(entity._id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>

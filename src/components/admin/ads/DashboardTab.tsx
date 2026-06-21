@@ -1,7 +1,7 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Megaphone, Image as ImageIcon, Calendar, DollarSign, Users, MousePointer, Eye, TrendingUp, AlertTriangle } from "lucide-react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 
 function StatCard({ title, value, icon: Icon, color = "blue", sub }: { title: string; value: string | number; icon: any; color?: string; sub?: string }) {
   const colors: Record<string, string> = {
@@ -30,8 +30,102 @@ function StatCard({ title, value, icon: Icon, color = "blue", sub }: { title: st
   );
 }
 
+type AdsCampaignStat = {
+  _id: string;
+  name: string;
+  partnerName?: string;
+  ctr?: number;
+  views?: number;
+  clicks?: number;
+  daysLeft?: number;
+};
+
+type AdsPlacementStat = {
+  _id: string;
+  name: string;
+  used: number;
+  maxAds: number;
+};
+
+type AdsDashboardStats = {
+  activeCampaigns: number;
+  plannedCampaigns: number;
+  activeCreatives: number;
+  activePartners: number;
+  estimatedRevenue: number;
+  totalViews: number;
+  totalClicks: number;
+  avgCtr: number;
+  topCampaigns: AdsCampaignStat[];
+  endingSoon: AdsCampaignStat[];
+  placementOccupancy: AdsPlacementStat[];
+};
+
+const DEFAULT_STATS: AdsDashboardStats = {
+  activeCampaigns: 0,
+  plannedCampaigns: 0,
+  activeCreatives: 0,
+  activePartners: 0,
+  estimatedRevenue: 0,
+  totalViews: 0,
+  totalClicks: 0,
+  avgCtr: 0,
+  topCampaigns: [],
+  endingSoon: [],
+  placementOccupancy: [],
+};
+
+const normalizeCampaign = (item: any): AdsCampaignStat => ({
+  _id: String(item?._id ?? item?.id ?? ""),
+  name: item?.name ?? "",
+  partnerName: item?.partnerName ?? item?.partner_name ?? "",
+  ctr: Number(item?.ctr ?? item?.avg_ctr ?? 0),
+  views: Number(item?.views ?? item?.total_views ?? 0),
+  clicks: Number(item?.clicks ?? item?.total_clicks ?? 0),
+  daysLeft: item?.daysLeft ?? item?.days_left ?? undefined,
+});
+
+const normalizePlacement = (item: any): AdsPlacementStat => ({
+  _id: String(item?._id ?? item?.id ?? ""),
+  name: item?.name ?? "",
+  used: Number(item?.used ?? 0),
+  maxAds: Number(item?.maxAds ?? item?.max_ads ?? 0),
+});
+
+const normalizeStats = (data: any): AdsDashboardStats => ({
+  activeCampaigns: data?.activeCampaigns ?? data?.active_campaigns ?? 0,
+  plannedCampaigns: data?.plannedCampaigns ?? data?.planned_campaigns ?? 0,
+  activeCreatives: data?.activeCreatives ?? data?.active_creatives ?? 0,
+  activePartners: data?.activePartners ?? data?.active_partners ?? 0,
+  estimatedRevenue: data?.estimatedRevenue ?? data?.estimated_revenue ?? 0,
+  totalViews: data?.totalViews ?? data?.total_views ?? 0,
+  totalClicks: data?.totalClicks ?? data?.total_clicks ?? 0,
+  avgCtr: Number(data?.avgCtr ?? data?.avg_ctr ?? 0),
+  topCampaigns: (data?.topCampaigns ?? data?.top_campaigns ?? []).map(normalizeCampaign),
+  endingSoon: (data?.endingSoon ?? data?.ending_soon ?? []).map(normalizeCampaign),
+  placementOccupancy: (data?.placementOccupancy ?? data?.placement_occupancy ?? []).map(normalizePlacement),
+});
+
 export function DashboardTab() {
-  const stats = useQuery(api.ads.getDashboardStats);
+  const [stats, setStats] = useState<AdsDashboardStats | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        if (!active) return;
+        setStats(normalizeStats(response));
+      } catch (error) {
+        console.warn("Ads dashboard stats API unavailable", error);
+        if (active) setStats(DEFAULT_STATS);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (!stats) return <div className="py-8 text-center text-muted-foreground">Ładowanie statystyk...</div>;
 

@@ -1,15 +1,53 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import EventCard from "@/components/EventCard";
 import { Music, Calendar } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 type EventFilter = "all" | "today" | "weekend" | "free";
 
+const normalizeEvent = (event: any) => ({
+  _id: String(event?.id ?? event?._id ?? ""),
+  title: event?.title ?? "",
+  description: event?.description ?? "",
+  category: event?.category ?? "",
+  imageUrl: event?.imageUrl ?? event?.image_url ?? null,
+  location: event?.location ?? "",
+  startDate: event?.startDate ?? event?.start_date ?? Date.now(),
+  endDate: event?.endDate ?? event?.end_date ?? null,
+  price: event?.price ?? null,
+  organizer: event?.organizer ?? null,
+});
+
+const normalizeEventsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.events ?? payload?.results ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeEvent) : [];
+};
+
 export default function EventsSection() {
-  const events = useQuery(api.events.getUpcoming, { limit: 6 });
+  const [events, setEvents] = useState<any[] | null>(null);
   const [activeFilter, setActiveFilter] = useState<EventFilter>("all");
+
+  useEffect(() => {
+    let active = true;
+    const loadEvents = async () => {
+      try {
+        const payload = await apiFetch("/events?limit=6");
+        if (!active) return;
+        setEvents(normalizeEventsPayload(payload));
+      } catch (error) {
+        if (!active) return;
+        setEvents([]);
+        toast.warning("Wydarzenia są chwilowo niedostępne.");
+      }
+    };
+
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filters: { key: EventFilter; label: string }[] = [
     { key: "all", label: "Wszystkie" },

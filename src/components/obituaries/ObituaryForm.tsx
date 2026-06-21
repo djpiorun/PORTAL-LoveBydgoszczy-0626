@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -20,7 +19,6 @@ function splitFullName(fullName: string) {
 }
 
 export default function ObituaryForm({ onSuccess }: { onSuccess: () => void }) {
-  const submitObituary = useMutation(api.obituaries.submitObituary);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
 
@@ -49,29 +47,31 @@ export default function ObituaryForm({ onSuccess }: { onSuccess: () => void }) {
     setIsSubmitting(true);
     try {
       const { firstName, lastName } = splitFullName(formData.fullName);
-      await submitObituary({
+      const payload = {
         type: formData.type,
-        firstName,
-        lastName,
-        age: formData.age || undefined,
-        deathDate: formData.deathDate || undefined,
-        city: formData.city || undefined,
-        profession: formData.profession || undefined,
-        shortDescription: formData.shortDescription || undefined,
-        title: formData.title || undefined,
-        content: formData.content || undefined,
-        funeralDate: formData.funeralDate || undefined,
-        funeralTime: formData.funeralTime || undefined,
-        funeralPlace: formData.funeralPlace || undefined,
-        cemeteryPlace: formData.cemeteryPlace || undefined,
-        submitterName: formData.submitterName || undefined,
-        submitterEmail: formData.submitterEmail || undefined,
-        submitterPhone: formData.submitterPhone || undefined,
-        submitterRelation: formData.submitterRelation || undefined,
-      });
+        first_name: firstName,
+        last_name: lastName,
+        age: formData.age || null,
+        death_date: formData.deathDate || null,
+        city: formData.city || null,
+        profession: formData.profession || null,
+        short_description: formData.shortDescription || null,
+        title: formData.title || null,
+        content: formData.content || null,
+        funeral_date: formData.funeralDate || null,
+        funeral_time: formData.funeralTime || null,
+        funeral_place: formData.funeralPlace || null,
+        cemetery_place: formData.cemeteryPlace || null,
+        submitter_name: formData.submitterName || null,
+        submitter_email: formData.submitterEmail || null,
+        submitter_phone: formData.submitterPhone || null,
+        submitter_relation: formData.submitterRelation || null,
+      };
+      await apiFetch("/obituaries", { method: "POST", body: payload });
       toast.success("Wpis został dodany i oczekuje na moderację.");
       onSuccess();
     } catch (error: any) {
+      console.warn("Obituaries API unavailable", error);
       toast.error(error?.message || "Wystąpił błąd podczas dodawania wpisu.");
     } finally {
       setIsSubmitting(false);

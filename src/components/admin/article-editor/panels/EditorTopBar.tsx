@@ -1,12 +1,11 @@
 import { ArrowLeft, Eye, Save, Send, Clock, RotateCcw, CheckCircle, FileText, Archive, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STATUS_OPTIONS } from "@/components/admin/article-editor/config/articleTypes";
-import { Id } from "@/convex/_generated/dataModel";
 
 interface EditorTopBarProps {
   title: string;
   slug?: string;
-  articleId?: Id<"articles">;
+  articleId?: string;
   status: string;
   saving: boolean;
   wordCount: number;

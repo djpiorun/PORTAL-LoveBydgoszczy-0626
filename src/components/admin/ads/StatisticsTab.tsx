@@ -1,17 +1,94 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { TrendingUp, Eye, MousePointer, DollarSign } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+
+type AdsCampaignStat = {
+  _id: string;
+  name: string;
+  views: number;
+  clicks: number;
+  ctr: number;
+};
+
+type AdsPlacementStat = {
+  _id: string;
+  name: string;
+  used: number;
+  available: number;
+  maxAds: number;
+};
+
+type AdsDashboardStats = {
+  totalViews: number;
+  totalClicks: number;
+  avgCtr: number;
+  estimatedRevenue: number;
+  topCampaigns: AdsCampaignStat[];
+  placementOccupancy: AdsPlacementStat[];
+};
+
+const DEFAULT_STATS: AdsDashboardStats = {
+  totalViews: 0,
+  totalClicks: 0,
+  avgCtr: 0,
+  estimatedRevenue: 0,
+  topCampaigns: [],
+  placementOccupancy: [],
+};
+
+const normalizeCampaign = (item: any): AdsCampaignStat => ({
+  _id: String(item?._id ?? item?.id ?? ""),
+  name: item?.name ?? "",
+  views: Number(item?.views ?? item?.total_views ?? 0),
+  clicks: Number(item?.clicks ?? item?.total_clicks ?? 0),
+  ctr: Number(item?.ctr ?? item?.avg_ctr ?? 0),
+});
+
+const normalizePlacement = (item: any): AdsPlacementStat => ({
+  _id: String(item?._id ?? item?.id ?? ""),
+  name: item?.name ?? "",
+  used: Number(item?.used ?? 0),
+  available: Number(item?.available ?? 0),
+  maxAds: Number(item?.maxAds ?? item?.max_ads ?? 0),
+});
+
+const normalizeStats = (data: any): AdsDashboardStats => ({
+  totalViews: data?.totalViews ?? data?.total_views ?? 0,
+  totalClicks: data?.totalClicks ?? data?.total_clicks ?? 0,
+  avgCtr: Number(data?.avgCtr ?? data?.avg_ctr ?? 0),
+  estimatedRevenue: data?.estimatedRevenue ?? data?.estimated_revenue ?? 0,
+  topCampaigns: (data?.topCampaigns ?? data?.top_campaigns ?? []).map(normalizeCampaign),
+  placementOccupancy: (data?.placementOccupancy ?? data?.placement_occupancy ?? []).map(normalizePlacement),
+});
 
 export function StatisticsTab() {
-  const stats = useQuery(api.ads.getDashboardStats);
+  const [stats, setStats] = useState<AdsDashboardStats | null>(null);
 
-  const campaignData = stats?.topCampaigns.map((c: any) => ({
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any>("/admin/ads/dashboard-stats");
+        if (!active) return;
+        setStats(normalizeStats(response));
+      } catch (error) {
+        console.warn("Ads statistics API unavailable", error);
+        if (active) setStats(DEFAULT_STATS);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const campaignData = stats?.topCampaigns.map((c) => ({
     _id: c._id,
     name: c.name.length > 12 ? c.name.substring(0, 12) + '…' : c.name,
     views: c.views ?? 0,
     clicks: c.clicks ?? 0,
-    ctr: parseFloat(c.ctr ?? "0"),
+    ctr: Number(c.ctr ?? 0),
   })) || [];
 
   const placementData = stats?.placementOccupancy.map((p: any) => ({

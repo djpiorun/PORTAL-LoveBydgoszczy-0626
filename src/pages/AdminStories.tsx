@@ -1,11 +1,10 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import { Plus, Trash2, Edit, Save, Image as ImageIcon, ArrowLeft, Upload, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Id } from "@/convex/_generated/dataModel";
 import StoryViewer from "@/components/StoryViewer";
+import { apiFetch } from "@/lib/api-client";
+import { uploadMediaAsset } from "@/lib/media-upload";
 
 type StoryItem = {
   type: "image" | "video";
@@ -15,17 +14,44 @@ type StoryItem = {
   link?: string;
 };
 
-export default function AdminStories() {
-  const stories = useQuery(api.stories.getAll);
-  const createStory = useMutation(api.stories.create);
-  const updateStory = useMutation(api.stories.update);
-  const removeStory = useMutation(api.stories.remove);
-  const generateUploadUrl = useMutation(api.stories.generateUploadUrl);
-  const getFileUrl = useMutation(api.stories.getFileUrl);
+const normalizeStory = (story: any) => ({
+  _id: String(story?.id ?? story?._id ?? ""),
+  title: story?.title ?? "",
+  coverImage: story?.coverImage ?? story?.cover_image ?? "",
+  author: story?.author ?? "",
+  isActive: story?.isActive ?? story?.is_active ?? true,
+  items: story?.items ?? [],
+});
 
-  const [editingId, setEditingId] = useState<Id<"stories"> | "new" | null>(null);
+const normalizeStoriesPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.stories ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeStory) : [];
+};
+
+export default function AdminStories() {
+  const [stories, setStories] = useState<any[] | undefined>(undefined);
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [previewStory, setPreviewStory] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    setStories(undefined);
+    apiFetch("/stories")
+      .then((payload) => {
+        if (!active) return;
+        setStories(normalizeStoriesPayload(payload));
+      })
+      .catch(() => {
+        if (!active) return;
+        setStories([]);
+        toast.warning("Relacje są chwilowo niedostępne.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   const [formData, setFormData] = useState<{
     title: string;
     coverImage: string;
@@ -77,16 +103,14 @@ export default function AdminStories() {
     setIsUploading(true);
     const toastId = toast.loading("Wgrywanie pliku...");
     try {
-      const postUrl = await generateUploadUrl();
-      const result = await fetch(postUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
+      const result = await uploadMediaAsset({
+        file,
+        kind: "story",
+        folder: "stories",
+        sourceKind: "story",
       });
-      const { storageId } = await result.json();
-      const url = await getFileUrl({ storageId });
       toast.success("Plik wgrany pomyślnie", { id: toastId });
-      return url;
+      return result.url;
     } catch (error) {
       toast.error("Wystąpił błąd podczas wgrywania pliku", { id: toastId });
       return null;
@@ -103,23 +127,39 @@ export default function AdminStories() {
     }
 
     try {
+      const payload = {
+        title: formData.title,
+        cover_image: formData.coverImage,
+        author: formData.author,
+        is_active: formData.isActive,
+        items: formData.items,
+      };
+
       if (editingId === "new") {
-        await createStory(formData);
+        await apiFetch("/stories", { method: "POST", body: payload });
         toast.success("Relacja została utworzona");
       } else if (editingId) {
-        await updateStory({ id: editingId, ...formData });
+        await apiFetch(`/stories/${editingId}`, { method: "PUT", body: payload });
         toast.success("Relacja została zaktualizowana");
       }
       setEditingId(null);
+      const refreshed = await apiFetch("/stories");
+      setStories(normalizeStoriesPayload(refreshed));
     } catch (error) {
       toast.error("Wystąpił błąd podczas zapisywania");
     }
   };
 
-  const handleDelete = async (id: Id<"stories">) => {
+  const handleDelete = async (id: string) => {
     if (confirm("Czy na pewno chcesz usunąć tę relację?")) {
-      await removeStory({ id });
-      toast.success("Relacja usunięta");
+      try {
+        await apiFetch(`/stories/${id}`, { method: "DELETE" });
+        toast.success("Relacja usunięta");
+        const refreshed = await apiFetch("/stories");
+        setStories(normalizeStoriesPayload(refreshed));
+      } catch (error) {
+        toast.error("Nie udało się usunąć relacji");
+      }
     }
   };
 

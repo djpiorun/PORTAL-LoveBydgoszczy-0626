@@ -1,25 +1,37 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Navbar from "@/components/Navbar";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Id } from "@/convex/_generated/dataModel";
 import ArticleForm from "@/components/admin/ArticleForm";
 import ArticleList from "@/components/admin/ArticleList";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles, type Article } from "@/lib/articles-api";
+import { uploadMediaAsset } from "@/lib/media-upload";
 
 export default function AdminArticles() {
-  const articles = useQuery(api.articles.getAll);
-  const createArticle = useMutation(api.articles.create);
-  const updateArticle = useMutation(api.articles.update);
-  const removeArticle = useMutation(api.articles.remove);
-  const generateUploadUrl = useMutation(api.articles.generateUploadUrl);
-  const getFileUrl = useMutation(api.articles.getFileUrl);
+  const [articles, setArticles] = useState<Article[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [editingId, setEditingId] = useState<Id<"articles"> | "new" | null>(null);
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+
+  const loadArticles = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchArticles();
+      setArticles(data);
+    } catch {
+      setArticles([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadArticles();
+  }, [loadArticles]);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -91,18 +103,15 @@ export default function AdminArticles() {
     setIsUploading(true);
     const toastId = toast.loading("Wgrywanie zdjęcia...");
     try {
-      const postUrl = await generateUploadUrl();
-      const result = await fetch(postUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
+      const upload = await uploadMediaAsset({
+        file,
+        kind: "article",
+        folder: formData.category ? `Artykuly / ${formData.category}` : "Artykuly / glowny",
       });
-      const { storageId } = await result.json();
-      const url = await getFileUrl({ storageId });
       toast.success("Zdjęcie wgrane pomyślnie", { id: toastId });
-      return url;
-    } catch (error) {
-      toast.error("Wystąpił błąd podczas wgrywania zdjęcia", { id: toastId });
+      return upload.url;
+    } catch (error: any) {
+      toast.error(error?.message ?? "Wystąpił błąd podczas wgrywania zdjęcia", { id: toastId });
       return null;
     } finally {
       setIsUploading(false);
@@ -116,38 +125,43 @@ export default function AdminArticles() {
       return;
     }
 
-    const articleData = {
+    const payload = {
       title: formData.title,
       excerpt: formData.excerpt,
       content: formData.content,
       category: formData.category,
-      imageUrl: formData.imageUrl,
+      image_url: formData.imageUrl || null,
       author: formData.author,
-      publishedAt: new Date(formData.publishedAt).getTime(),
+      published_at: new Date(formData.publishedAt).toISOString(),
       featured: formData.featured,
-      isPatronage: formData.isPatronage,
+      is_patronage: formData.isPatronage,
       tags: formData.tags.split(",").map(t => t.trim()).filter(t => t),
-      hideInReels: formData.hideInReels,
+      hide_in_reels: formData.hideInReels,
     };
 
     try {
       if (editingId === "new") {
-        await createArticle(articleData);
+        await apiFetch("/articles", { method: "POST", body: payload });
         toast.success("Artykuł został dodany");
       } else if (editingId) {
-        await updateArticle({ id: editingId, ...articleData });
+        await apiFetch(`/articles/${editingId}`, { method: "PUT", body: payload });
         toast.success("Artykuł został zaktualizowany");
       }
       setEditingId(null);
-    } catch (error) {
-      toast.error("Wystąpił błąd podczas zapisywania");
+      await loadArticles();
+    } catch (error: any) {
+      toast.error(error?.message ?? "Wystąpił błąd podczas zapisywania");
     }
   };
 
-  const handleDelete = async (id: Id<"articles">) => {
-    if (confirm("Czy na pewno chcesz usunąć ten artykuł?")) {
-      await removeArticle({ id });
+  const handleDelete = async (id: string) => {
+    if (!confirm("Czy na pewno chcesz usunąć ten artykuł?")) return;
+    try {
+      await apiFetch(`/articles/${id}`, { method: "DELETE" });
+      setArticles((prev) => (prev ? prev.filter((article) => article.id !== id) : prev));
       toast.success("Artykuł usunięty");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Wystąpił błąd podczas usuwania");
     }
   };
 
@@ -182,7 +196,7 @@ export default function AdminArticles() {
           />
         ) : (
           <ArticleList
-            articles={articles}
+            articles={isLoading ? undefined : articles}
             filteredArticles={filteredArticles}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}

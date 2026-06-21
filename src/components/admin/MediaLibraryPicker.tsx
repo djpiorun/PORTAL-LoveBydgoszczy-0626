@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useMemo, useState } from "react";
 import { Check, FolderOpen, Image as ImageIcon, Search, Video, X } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
 
 type MediaLibraryPickerProps = {
   open: boolean;
@@ -12,6 +11,28 @@ type MediaLibraryPickerProps = {
   title?: string;
 };
 
+type MediaAsset = {
+  _id: string;
+  name: string;
+  url: string;
+  mediaType: "image" | "video" | string;
+  sourceKind?: string;
+  folder?: string;
+  tags?: string[];
+  originalFileName?: string;
+};
+
+const normalizeAsset = (asset: any): MediaAsset => ({
+  _id: String(asset._id ?? asset.id ?? asset.uuid ?? ""),
+  name: asset.name ?? asset.title ?? "",
+  url: asset.url ?? asset.file_url ?? asset.public_url ?? "",
+  mediaType: asset.mediaType ?? asset.media_type ?? asset.type ?? "image",
+  sourceKind: asset.sourceKind ?? asset.source_kind ?? undefined,
+  folder: asset.folder ?? asset.directory ?? undefined,
+  tags: asset.tags ?? asset.keywords ?? [],
+  originalFileName: asset.originalFileName ?? asset.original_file_name ?? undefined,
+});
+
 export default function MediaLibraryPicker({
   open,
   onClose,
@@ -20,11 +41,49 @@ export default function MediaLibraryPicker({
   accept = "all",
   title = "Wybierz z biblioteki",
 }: MediaLibraryPickerProps) {
-  const assets = (useQuery((api as any).mediaLibrary.list, {}) as any[]) || [];
-  const folders = (useQuery((api as any).mediaLibrary.getFolders, {}) as string[]) || [];
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [activeFolder, setActiveFolder] = useState<string>("all");
   const [activeSource, setActiveSource] = useState<string>(sourceKind || "all");
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<any[]>("/admin/media-library/assets");
+        if (!active) return;
+        setAssets(response.map(normalizeAsset));
+      } catch (error) {
+        console.warn("Media library assets API unavailable", error);
+        if (active) setAssets([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await apiFetch<string[]>("/admin/media-library/folders");
+        if (!active) return;
+        setFolders(response);
+      } catch (error) {
+        console.warn("Media library folders API unavailable", error);
+        if (active) setFolders([]);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {

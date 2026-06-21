@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ArrowRight, Sparkles, BookOpen, Mic, BarChart2, FileText, Lightbulb, Users, Send, DollarSign } from "lucide-react";
 import { getArticleHref } from "@/lib/articleRouting";
+import { useArticles } from "@/hooks/use-articles-api";
 
 const articleTypeBadgeMap: Record<string, { label: string; icon: any; className: string }> = {
   quiz: { label: "QUIZ", icon: BookOpen, className: "bg-fuchsia-500/90 text-white" },
@@ -31,7 +30,7 @@ const categoryLabels: Record<string, string> = {
 };
 
 function HeroCardStack() {
-  const latestArticles = useQuery(api.articles.getLatest, { limit: 5 });
+  const { articles: latestArticles, isLoading } = useArticles({ limit: 5 });
   const [order, setOrder] = useState<number[]>([]);
 
   useEffect(() => {
@@ -53,8 +52,12 @@ function HeroCardStack() {
     return () => clearInterval(interval);
   }, [order.length]);
 
-  if (!latestArticles) {
+  if (isLoading) {
     return <div className="h-[350px] w-full animate-pulse rounded-[1.5rem] bg-muted" />;
+  }
+
+  if (!latestArticles.length) {
+    return null;
   }
 
   return (
@@ -76,7 +79,7 @@ function HeroCardStack() {
 
         return (
           <motion.div
-            key={article._id}
+            key={article.id}
             layout
             initial={false}
             animate={{

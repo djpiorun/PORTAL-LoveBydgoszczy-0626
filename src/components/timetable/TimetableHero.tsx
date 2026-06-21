@@ -5,12 +5,12 @@ export default function TimetableHero() {
     <div className="relative bg-blue-600 overflow-hidden rounded-3xl shadow-2xl">
       <div className="absolute inset-0 bg-blue-700">
         <img 
-          src="https://harmless-tapir-303.convex.cloud/api/storage/3fa75e41-1cde-48ef-88ad-cd2da549887a" 
+          src="/assets/timetable-bus.png" 
           alt="Autobus" 
           className="absolute left-0 top-1/2 -translate-y-1/2 h-[90%] w-auto object-contain opacity-20 blur-md z-0 pointer-events-none" 
         />
         <img 
-          src="https://harmless-tapir-303.convex.cloud/api/storage/279b9aed-06a2-4f90-8ec6-6631b64751e7" 
+          src="/assets/timetable-tram.png" 
           alt="Tramwaj" 
           className="absolute right-0 top-1/2 -translate-y-1/2 h-[90%] w-auto object-contain opacity-20 blur-md z-0 pointer-events-none" 
         />

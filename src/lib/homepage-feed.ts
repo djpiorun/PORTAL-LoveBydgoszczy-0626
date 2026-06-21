@@ -1,5 +1,4 @@
-import { ConvexHttpClient } from "convex/browser";
-import { makeFunctionReference } from "convex/server";
+import { apiFetch } from "@/lib/api-client";
 
 const CACHE_TTL_MS = 60_000;
 
@@ -46,10 +45,6 @@ export type HomepageFeed = {
   };
 };
 
-const HOMEPAGE_FEED_QUERY = makeFunctionReference<"query", Record<string, never>, HomepageFeed>(
-  "portalSettings:getHomepageFeed",
-);
-
 type FeedCache = {
   data: HomepageFeed | null;
   fetchedAt: number;
@@ -62,21 +57,8 @@ const feedCache: FeedCache = {
   inflight: null,
 };
 
-function getDirectoryConvexUrl() {
-  return import.meta.env.VITE_DIRECTORY_CONVEX_URL as string | undefined;
-}
-
 function getDirectoryBaseUrl() {
   return (import.meta.env.VITE_DIRECTORY_BASE_URL as string | undefined)?.replace(/\/+$/, "");
-}
-
-function createDirectoryClient() {
-  const deploymentUrl = getDirectoryConvexUrl();
-  if (!deploymentUrl) {
-    throw new Error("Brakuje konfiguracji `VITE_DIRECTORY_CONVEX_URL` dla feedu katalogu.");
-  }
-
-  return new ConvexHttpClient(deploymentUrl, { logger: false });
 }
 
 function normalizeSlug(value?: string | null) {
@@ -128,8 +110,7 @@ export async function fetchHomepageFeed() {
     return feedCache.inflight;
   }
 
-  feedCache.inflight = createDirectoryClient()
-    .query(HOMEPAGE_FEED_QUERY, {})
+  feedCache.inflight = apiFetch<HomepageFeed>("/homepage-feed")
     .then((result) => {
       const normalized = normalizeFeed(result as HomepageFeed);
       feedCache.data = normalized;
@@ -145,7 +126,6 @@ export async function fetchHomepageFeed() {
 
 export function getHomepageFeedAvailability() {
   return {
-    hasDirectoryConvexUrl: Boolean(getDirectoryConvexUrl()),
     hasDirectoryBaseUrl: Boolean(getDirectoryBaseUrl()),
   };
 }

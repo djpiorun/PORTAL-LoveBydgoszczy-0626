@@ -1,38 +1,150 @@
-import { useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
 import { motion } from "framer-motion";
 import StoryViewer from "./StoryViewer";
 import { Sparkles, Play } from "lucide-react";
+import { toast } from "sonner";
+
+type StoryItem = {
+  type: "image" | "video" | "facebook_reel";
+  url: string;
+  duration?: number;
+  text?: string;
+  link?: string;
+};
+
+type Story = {
+  _id: string;
+  title: string;
+  author: string;
+  coverImage: string;
+  items: StoryItem[];
+};
+
+type Reel = {
+  _id: string;
+  title: string;
+  author?: string;
+  coverImage?: string;
+  sourceType?: string;
+  embedUrl?: string;
+  videoUrl?: string;
+  description?: string;
+};
+
+type StoriesResponse = {
+  stories?: Story[];
+};
+
+type ReelsResponse = {
+  reels?: Reel[];
+};
+
+const FALLBACK_COVER = "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=400&q=80";
 
 export default function StoriesSection() {
-  const stories = useQuery(api.stories.getActive);
-  const reelsForStories = useQuery(api.reels.listForStories);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [reelsForStories, setReelsForStories] = useState<Reel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
   const [activeReelId, setActiveReelId] = useState<string | null>(null);
 
+  const normalizeStory = (story: any, index: number): Story => {
+    const coverImage = story?.coverImage ?? FALLBACK_COVER;
+    const author = story?.author ?? "Love Bydgoszcz";
+    const rawItems = Array.isArray(story?.items) ? story.items : [];
+    const items = rawItems
+      .map((item: any) => ({
+        type: (item?.type ?? "image") as StoryItem["type"],
+        url: item?.url ?? coverImage,
+        duration: item?.duration,
+        text: item?.text,
+        link: item?.link,
+      }))
+      .filter((item: StoryItem) => Boolean(item.url));
+
+    return {
+      _id: story?._id ?? story?.id ?? `story-${index}`,
+      title: story?.title ?? "Relacja",
+      author,
+      coverImage,
+      items: items.length > 0 ? items : [{ type: "image", url: coverImage, duration: 5 }],
+    };
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStories = async () => {
+      setIsLoading(true);
+      const [storiesResult, reelsResult] = await Promise.allSettled([
+        apiFetch<StoriesResponse | Story[]>("/stories/active"),
+        apiFetch<ReelsResponse | Reel[]>("/reels/stories"),
+      ]);
+
+      if (!isMounted) return;
+
+      let nextStories: Story[] = [];
+      let nextReels: Reel[] = [];
+      let hadError = false;
+
+      if (storiesResult.status === "fulfilled") {
+        const data = storiesResult.value;
+        const rawStories = Array.isArray(data) ? data : data?.stories ?? [];
+        nextStories = rawStories.map((story, index) => normalizeStory(story, index));
+      } else {
+        hadError = true;
+      }
+
+      if (reelsResult.status === "fulfilled") {
+        const data = reelsResult.value;
+        nextReels = Array.isArray(data) ? data : data?.reels ?? [];
+      } else {
+        hadError = true;
+      }
+
+      setStories(nextStories);
+      setReelsForStories(nextReels);
+
+      if (hadError) {
+        toast.error("Nie udało się pobrać relacji.");
+      }
+
+      setIsLoading(false);
+    };
+
+    loadStories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Convert reels to story-compatible format for StoryViewer
-  const reelStories = (reelsForStories ?? []).map((reel) => ({
-    _id: reel._id,
-    title: reel.title,
-    author: reel.author ?? "Love Bydgoszcz",
-    coverImage: reel.coverImage ?? "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=400&q=80",
-    items: [
-      {
-        type: (reel.sourceType === "facebook" ? "facebook_reel" : "video") as "video" | "facebook_reel",
-        url: reel.embedUrl ?? reel.videoUrl,
-        duration: 30,
-        text: reel.description,
-        link: reel.videoUrl,
-      },
-    ],
-  }));
+  const reelStories = (reelsForStories ?? []).map((reel, index) => {
+    const coverImage = reel.coverImage ?? FALLBACK_COVER;
+    const url = reel.embedUrl ?? reel.videoUrl ?? coverImage;
+    return {
+      _id: reel._id ?? `reel-${index}`,
+      title: reel.title ?? "Rolka",
+      author: reel.author ?? "Love Bydgoszcz",
+      coverImage,
+      items: [
+        {
+          type: (reel.sourceType === "facebook" ? "facebook_reel" : "video") as StoryItem["type"],
+          url,
+          duration: 30,
+          text: reel.description,
+          link: reel.videoUrl ?? url,
+        },
+      ],
+    };
+  });
 
-  const hasContent = (stories && stories.length > 0) || (reelsForStories && reelsForStories.length > 0);
-  if (!hasContent && stories !== undefined && reelsForStories !== undefined) return null;
+  const hasContent = stories.length > 0 || reelsForStories.length > 0;
+  if (!hasContent && !isLoading) return null;
 
-  const allStories = [...(stories ?? [])];
-  const storiesCount = allStories.length;
+  const storiesCount = stories.length;
 
   return (
     <section className="relative z-10 overflow-visible border-b border-border/40 bg-transparent pb-5 pt-6">
@@ -46,7 +158,7 @@ export default function StoriesSection() {
 
         <div className="flex gap-4 overflow-x-auto pb-2 pt-1 -mx-1 px-1 [&::-webkit-scrollbar]:hidden snap-x">
           {/* Regular stories */}
-          {(stories ?? []).map((story, index) => (
+          {stories.map((story, index) => (
             <motion.button
               key={story._id}
               type="button"
@@ -82,7 +194,7 @@ export default function StoriesSection() {
           ))}
 
           {/* Reels shown in stories */}
-          {(reelsForStories ?? []).map((reel, index) => (
+          {reelsForStories.map((reel, index) => (
             <motion.button
               key={reel._id}
               type="button"
@@ -130,7 +242,7 @@ export default function StoriesSection() {
       </div>
 
       {/* Regular story viewer */}
-      {activeStoryIndex !== null && stories && (
+      {activeStoryIndex !== null && stories.length > 0 && (
         <StoryViewer
           stories={stories}
           initialStoryIndex={activeStoryIndex}

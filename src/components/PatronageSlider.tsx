@@ -1,13 +1,12 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { Link } from "react-router";
 import { getArticleHref } from "@/lib/articleRouting";
+import { useArticles } from "@/hooks/use-articles-api";
 
 export default function PatronageSlider() {
-  const patronages = useQuery(api.articles.getPatronages, { limit: 5 });
+  const { articles: patronages, isLoading } = useArticles({ patronage: true, limit: 5 });
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
@@ -18,7 +17,7 @@ export default function PatronageSlider() {
     return () => clearInterval(interval);
   }, [patronages]);
 
-  if (patronages === undefined) {
+  if (isLoading) {
     return <div className="h-64 rounded-2xl bg-muted animate-pulse" />;
   }
 

@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api-client";
+
 export type MediaKind = "article" | "story" | "event" | "profile";
 
 type MediaConfig = {
@@ -11,18 +13,22 @@ type UploadParams = {
   file: File;
   kind: MediaKind;
   mediaConfig?: MediaConfig | null;
-  createR2Upload: (args: { fileName: string; contentType: string; folder: string }) => Promise<{
+  createR2Upload?: (args: { fileName: string; contentType: string; folder: string }) => Promise<{
     uploadUrl: string;
     fileUrl: string;
   }>;
-  fallbackGenerateUploadUrl: () => Promise<string>;
-  fallbackGetFileUrl: (args: any) => Promise<string | null>;
+  fallbackGenerateUploadUrl?: () => Promise<string>;
+  fallbackGetFileUrl?: (args: any) => Promise<string | null>;
+  folder?: string;
+  sourceKind?: string;
+  sourceEntityId?: string;
+  tags?: string[];
 };
 
 type UploadResult = {
   url: string;
   file: File;
-  storageProvider: "r2" | "convex";
+  storageProvider: "r2" | "convex" | "local";
   width?: number;
   height?: number;
 };
@@ -104,17 +110,15 @@ export async function uploadMediaAsset({
   kind,
   mediaConfig,
   createR2Upload,
-  fallbackGenerateUploadUrl,
-  fallbackGetFileUrl,
+  folder,
+  sourceKind,
+  sourceEntityId,
+  tags,
 }: UploadParams): Promise<UploadResult> {
-  if (mediaConfig === undefined) {
-    throw new Error("Ustawienia mediow wciaz sie laduja. Sprobuj ponownie za chwile.");
-  }
-
-  const processedFile = await optimizeImage(file, kind, mediaConfig);
+  const processedFile = await optimizeImage(file, kind, mediaConfig ?? null);
   const dimensions = await getImageDimensions(processedFile);
 
-  if (mediaConfig?.r2Enabled) {
+  if (mediaConfig?.r2Enabled && createR2Upload) {
     try {
       const upload = await createR2Upload({
         fileName: processedFile.name,
@@ -139,28 +143,31 @@ export async function uploadMediaAsset({
         ...dimensions,
       };
     } catch (error) {
-      console.error("R2 upload failed, falling back to default storage", error);
+      console.error("R2 upload failed, falling back to Laravel", error);
     }
   }
 
-  const uploadUrl = await fallbackGenerateUploadUrl();
-  const response = await fetch(uploadUrl, {
+  const formData = new FormData();
+  formData.append("file", processedFile);
+  formData.append("source_kind", sourceKind ?? kind);
+  if (sourceEntityId) {
+    formData.append("source_entity_id", sourceEntityId);
+  }
+  formData.append("folder", folder ?? kind);
+  if (tags?.length) {
+    tags.forEach((tag) => formData.append("tags[]", tag));
+  }
+
+  const payload = await apiFetch<any>("/media/upload", {
     method: "POST",
-    headers: { "Content-Type": processedFile.type },
-    body: processedFile,
+    body: formData,
   });
-  if (!response.ok) {
-    throw new Error(`Upload failed (${response.status})`);
-  }
-  const { storageId } = await response.json();
-  const fileUrl = await fallbackGetFileUrl({ storageId });
-  if (!fileUrl) {
-    throw new Error("Upload completed, but file URL could not be resolved");
-  }
+  const asset = payload?.data ?? payload;
+
   return {
-    url: fileUrl,
+    url: asset.url,
     file: processedFile,
-    storageProvider: "convex",
+    storageProvider: asset.storage_provider ?? "local",
     ...dimensions,
   };
 }

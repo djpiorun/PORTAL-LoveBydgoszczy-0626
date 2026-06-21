@@ -1,11 +1,12 @@
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { usePaginatedQuery, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ArticleCard from "@/components/ArticleCard";
 import { motion } from "framer-motion";
 import { getArticleHref } from "@/lib/articleRouting";
+import { fetchPaginatedArticles, type Article } from "@/lib/articles-api";
+import { useAuthorLookup } from "@/hooks/use-authors-api";
 import { User, FileText, ShieldCheck, Mail, Phone, Globe, Facebook, Instagram, Twitter, ArrowLeft, Clock, ChevronRight } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -32,17 +33,88 @@ const CAT_LABEL: Record<string, string> = {
   medyczna: "Medycyna",
 };
 
+function useAuthorArticles(authorName: string, perPage: number) {
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [canLoadMore, setCanLoadMore] = useState(false);
+
+  useEffect(() => {
+    setArticles([]);
+    setPage(1);
+  }, [authorName, perPage]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!authorName) {
+      setArticles([]);
+      setTotal(0);
+      setCanLoadMore(false);
+      setIsLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoading(true);
+    fetchPaginatedArticles({ author: authorName, page, perPage })
+      .then((response) => {
+        if (!isMounted) return;
+        setArticles((prev) => (page === 1 ? response.articles : [...prev, ...response.articles]));
+        const currentPage = response.meta?.current_page ?? page;
+        const lastPage = response.meta?.last_page ?? currentPage;
+        setTotal((prevTotal) => response.meta?.total ?? (page === 1 ? response.articles.length : prevTotal));
+        setCanLoadMore(currentPage < lastPage);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setArticles([]);
+        setTotal(0);
+        setCanLoadMore(false);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authorName, page, perPage]);
+
+  const loadMore = () => {
+    if (canLoadMore && !isLoading) {
+      setPage((prev) => prev + 1);
+    }
+  };
+
+  return {
+    articles,
+    isLoading,
+    isInitialLoading: isLoading && page === 1 && articles.length === 0,
+    isLoadingMore: isLoading && page > 1,
+    total,
+    canLoadMore,
+    loadMore,
+  };
+}
+
 function MobileAuthorPage({ decodedName }: { decodedName: string }) {
   const nav = useNavigate();
-  const author = useQuery(api.users.getBySlugOrName, { identifier: decodedName });
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.articles.getByAuthor,
-    { author: author?.name || (author === null ? decodedName.replace(/-/g, " ") : "") },
-    { initialNumItems: 20 }
-  );
+  const { author } = useAuthorLookup(decodedName);
+  const authorName = author?.name || decodedName.replace(/-/g, " ");
+  const {
+    articles,
+    isInitialLoading,
+    isLoadingMore,
+    canLoadMore,
+    loadMore,
+    total,
+  } = useAuthorArticles(authorName, 20);
 
-  const heroArticles = results.slice(0, 3);
-  const listArticles = results.slice(3);
+  const heroArticles = articles.slice(0, 3);
+  const listArticles = articles.slice(3);
 
   return (
     <div className="min-h-screen bg-background pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
@@ -61,7 +133,7 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
           </button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-black text-foreground">{author?.name || decodedName}</p>
-            <p className="truncate text-[10px] font-medium text-foreground/50">{results.length} publikacji</p>
+            <p className="truncate text-[10px] font-medium text-foreground/50">{total} publikacji</p>
           </div>
         </div>
       </div>
@@ -111,7 +183,7 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
                 )}
                 <div className="mt-2 flex items-center gap-1.5">
                   <FileText className="h-3 w-3 text-primary" />
-                  <span className="text-[11px] font-bold text-foreground/60">{results.length} publikacji</span>
+                  <span className="text-[11px] font-bold text-foreground/60">{total} publikacji</span>
                 </div>
               </div>
             </div>
@@ -174,11 +246,11 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
 
       {/* Articles */}
       <div className="px-4 pt-5 space-y-4">
-        {status === "LoadingFirstPage" ? (
+        {isInitialLoading ? (
           <div className="space-y-3">
             {[...Array(4)].map((_, i) => <div key={i} className="h-24 rounded-[1.5rem] bg-muted animate-pulse" />)}
           </div>
-        ) : results.length === 0 ? (
+        ) : articles.length === 0 ? (
           <div className="flex flex-col items-center py-12 text-foreground/40">
             <FileText className="h-10 w-10 mb-3 opacity-30" />
             <p className="font-bold text-[14px]">Brak artykułów</p>
@@ -188,7 +260,7 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
             {/* Section label */}
             <div className="flex items-center justify-between">
               <h2 className="text-[15px] font-black text-foreground">Publikacje</h2>
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold text-primary">{results.length}</span>
+              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold text-primary">{total}</span>
             </div>
 
             {/* Hero cards (first 3) */}
@@ -196,7 +268,7 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
               <div className="space-y-3">
                 {heroArticles.map((article, i) => (
                   <motion.button
-                    key={article._id}
+                    key={article.id}
                     type="button"
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -241,7 +313,7 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
               <div className="rounded-[1.5rem] border border-border/30 bg-card px-1 py-1 shadow-sm">
                 {listArticles.map((article, i) => (
                   <motion.button
-                    key={article._id}
+                    key={article.id}
                     type="button"
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -277,18 +349,18 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
               </div>
             )}
 
-            {status === "CanLoadMore" && (
+            {canLoadMore && (
               <div className="flex justify-center py-4">
                 <button
                   type="button"
-                  onClick={() => loadMore(10)}
+                  onClick={loadMore}
                   className="rounded-full border border-border/50 bg-card px-5 py-2.5 text-[12px] font-bold text-foreground/70 active:scale-95 transition shadow-sm"
                 >
                   Załaduj więcej
                 </button>
               </div>
             )}
-            {status === "LoadingMore" && (
+            {isLoadingMore && (
               <div className="flex justify-center py-4">
                 <div className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
               </div>
@@ -301,16 +373,19 @@ function MobileAuthorPage({ decodedName }: { decodedName: string }) {
 }
 
 function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
-  const author = useQuery(api.users.getBySlugOrName, { identifier: decodedName });
+  const { author } = useAuthorLookup(decodedName);
+  const authorName = author?.name || decodedName.replace(/-/g, " ");
+  const {
+    articles,
+    isInitialLoading,
+    isLoadingMore,
+    canLoadMore,
+    loadMore,
+    total,
+  } = useAuthorArticles(authorName, 13);
 
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.articles.getByAuthor,
-    { author: author?.name || (author === null ? decodedName.replace(/-/g, ' ') : "") },
-    { initialNumItems: 13 }
-  );
-
-  const latestArticles = results.slice(0, 3);
-  const otherArticles = results.slice(3);
+  const latestArticles = articles.slice(0, 3);
+  const otherArticles = articles.slice(3);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -369,7 +444,7 @@ function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
                 )}
                 <span className="flex items-center gap-2 px-4 py-1.5 bg-background border border-border shadow-sm text-foreground text-sm font-bold rounded-full">
                   <FileText className="w-4 h-4 text-primary" />
-                  {results.length} publikacji
+                  {total} publikacji
                 </span>
               </div>
 
@@ -426,13 +501,13 @@ function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
       {/* Articles Section */}
       <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 w-full">
         
-        {status === "LoadingFirstPage" ? (
+        {isInitialLoading ? (
           <div className="flex flex-col gap-8">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-[400px] rounded-[2.5rem] bg-muted animate-pulse border border-border" />
             ))}
           </div>
-        ) : results.length === 0 ? (
+        ) : articles.length === 0 ? (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -453,7 +528,7 @@ function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {latestArticles.map((article, i) => (
                     <motion.div
-                      key={article._id}
+                      key={article.id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.5, delay: i * 0.1 }}
@@ -474,7 +549,7 @@ function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
                 <div className="flex flex-col gap-6">
                   {otherArticles.map((article, i) => (
                     <motion.div
-                      key={article._id}
+                      key={article.id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.5, delay: i * 0.1 }}
@@ -486,17 +561,17 @@ function DesktopAuthorPage({ decodedName }: { decodedName: string }) {
               </div>
             )}
             
-            {status === "CanLoadMore" && (
+            {canLoadMore && (
               <div className="flex justify-center mt-12">
                 <button
-                  onClick={() => loadMore(10)}
+                  onClick={loadMore}
                   className="bg-background text-foreground font-bold px-8 py-3 rounded-full transition-all border-2 border-border hover:border-foreground flex items-center gap-2"
                 >
                   Załaduj więcej
                 </button>
               </div>
             )}
-            {status === "LoadingMore" && (
+            {isLoadingMore && (
               <div className="flex justify-center mt-12">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
               </div>

@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { usePaginatedQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import ArticleCard from "@/components/ArticleCard";
 import { TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { usePaginatedArticles } from "@/hooks/use-articles-api";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -12,23 +11,23 @@ export default function AktualnosciSection() {
   const [activeCategory, setActiveCategory] = useState<string | "all">("all");
   const [currentPage, setCurrentPage] = useState(1);
   
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.articles.listPaginated,
-    { category: activeCategory === "all" ? undefined : (activeCategory as any) },
-    { initialNumItems: ITEMS_PER_PAGE }
-  );
-  const resolvedResults = useResolvedArticles(results);
+  const { articles, isLoading, meta, page, setPage } = usePaginatedArticles({
+    category: activeCategory === "all" ? undefined : activeCategory,
+    perPage: ITEMS_PER_PAGE,
+    page: currentPage,
+  });
+  const resolvedResults = useResolvedArticles(articles);
 
   // Reset page when category changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeCategory]);
+    setPage(1);
+  }, [activeCategory, setPage]);
 
   const handleNextPage = () => {
-    if (currentPage * ITEMS_PER_PAGE >= (resolvedResults?.length ?? 0) && status === "CanLoadMore") {
-      loadMore(ITEMS_PER_PAGE);
-    }
-    setCurrentPage(p => p + 1);
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    setPage(nextPage);
     
     // Scroll to top of section smoothly
     const el = document.getElementById("aktualnosci");
@@ -39,7 +38,9 @@ export default function AktualnosciSection() {
   };
 
   const handlePrevPage = () => {
-    setCurrentPage(p => Math.max(1, p - 1));
+    const nextPage = Math.max(1, currentPage - 1);
+    setCurrentPage(nextPage);
+    setPage(nextPage);
     
     // Scroll to top of section smoothly
     const el = document.getElementById("aktualnosci");
@@ -49,8 +50,8 @@ export default function AktualnosciSection() {
     }
   };
 
-  const currentResults = (resolvedResults ?? []).slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  const totalPages = Math.max(1, Math.ceil((resolvedResults?.length ?? 0) / ITEMS_PER_PAGE) + (status === "CanLoadMore" ? 1 : 0));
+  const currentResults = resolvedResults ?? [];
+  const totalPages = meta?.last_page ?? 1;
 
   const categories = [
     { id: "all", label: "Wszystkie" },
@@ -100,7 +101,7 @@ export default function AktualnosciSection() {
         </div>
       </motion.div>
 
-      {status === "LoadingFirstPage" ? (
+      {isLoading ? (
         <div className="flex flex-col gap-5">
           {[...Array(ITEMS_PER_PAGE)].map((_, i) => (
             <div key={i} className="h-56 rounded-[1.75rem] bg-gradient-to-br from-slate-100 to-slate-50 animate-pulse shadow-sm border border-slate-100/50 dark:from-card/60 dark:to-card/40 dark:border-border/30" />
@@ -114,7 +115,7 @@ export default function AktualnosciSection() {
         <div className="flex flex-col gap-6">
           {currentResults.length > 0 ? (
             currentResults.map((article, i) => (
-              <ArticleCard key={article._id} article={article} index={i} list />
+              <ArticleCard key={article.id} article={article} index={i} list />
             ))
           ) : (
             <div className="flex justify-center py-12">
@@ -141,7 +142,7 @@ export default function AktualnosciSection() {
 
             <button
               onClick={handleNextPage}
-              disabled={currentPage * ITEMS_PER_PAGE >= (resolvedResults?.length ?? 0) && status !== "CanLoadMore"}
+              disabled={currentPage >= totalPages}
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-foreground dark:hover:bg-card/70"
             >
               <span className="hidden sm:inline">Następna</span>

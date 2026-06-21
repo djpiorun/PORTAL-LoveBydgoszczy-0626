@@ -10,9 +10,8 @@ export default function TimetableEmptyState() {
       <p className="text-sm sm:text-base text-slate-500 max-w-md mx-auto mb-6">
         Baza danych rozkładu jazdy jest obecnie pusta. Dane są aktualizowane automatycznie każdego dnia rano.
       </p>
-      <div className="inline-flex flex-col sm:flex-row items-center gap-2 text-xs sm:text-sm font-medium text-amber-600 bg-amber-50 px-4 py-3 rounded-xl border border-amber-200/50">
-        <span>Informacja dla administratora: Uruchom pierwszą synchronizację komendą:</span>
-        <code className="bg-amber-100/80 px-2 py-1 rounded-md text-amber-800 font-mono">npx convex run gtfsActions:updateGtfsData</code>
+      <div className="text-xs sm:text-sm font-medium text-amber-600 bg-amber-50 px-4 py-3 rounded-xl border border-amber-200/50">
+        Informacja dla administratora: Uruchom pierwszą synchronizację w panelu administracyjnym.
       </div>
     </div>
   );

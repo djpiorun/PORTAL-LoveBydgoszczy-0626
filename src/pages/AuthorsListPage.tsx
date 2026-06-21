@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Link } from "react-router";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Search, User, ShieldCheck, ChevronRight, Pen, Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuthors } from "@/hooks/use-authors-api";
 
 // Gradient palette for author cards (cycles through)
 const CARD_GRADIENTS = [
@@ -19,7 +18,7 @@ const CARD_GRADIENTS = [
 ];
 
 export default function AuthorsListPage() {
-  const authors = useQuery(api.users.getAuthors);
+  const { authors, isLoading } = useAuthors();
   const [searchQuery, setSearchQuery] = useState("");
   const isMobile = useIsMobile();
 
@@ -96,7 +95,7 @@ export default function AuthorsListPage() {
 
         {/* Authors grid — 2 columns */}
         <div className="px-4">
-          {!authors ? (
+          {isLoading ? (
             <div className="grid grid-cols-2 gap-3">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="h-[160px] rounded-[1.5rem] bg-muted animate-pulse" />
@@ -114,7 +113,7 @@ export default function AuthorsListPage() {
                 const grad = CARD_GRADIENTS[i % CARD_GRADIENTS.length];
                 return (
                   <motion.div
-                    key={author._id}
+                    key={author.id}
                     initial={{ opacity: 0, y: 16, scale: 0.94 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     transition={{ duration: 0.3, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
@@ -210,7 +209,7 @@ export default function AuthorsListPage() {
       </div>
 
       <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 w-full">
-        {!authors ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="h-[400px] rounded-3xl bg-muted animate-pulse border border-border" />
@@ -226,7 +225,7 @@ export default function AuthorsListPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredAuthors?.map((author, i) => (
               <motion.div
-                key={author._id}
+                key={author.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: i * 0.1 }}

@@ -1,18 +1,53 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
 import { motion, AnimatePresence } from "framer-motion";
 import { User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
+type AuthorRecord = {
+  id: string;
+  name: string;
+  image?: string | null;
+  subtitle?: string | null;
+};
+
+const normalizeAuthor = (author: any): AuthorRecord => ({
+  id: String(author?.id ?? author?._id ?? author?.slug ?? ""),
+  name: author?.name ?? author?.full_name ?? "",
+  image: author?.image ?? author?.photo ?? null,
+  subtitle: author?.subtitle ?? author?.role ?? null,
+});
+
 export default function AuthorAutocomplete({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  const authors = useQuery(api.users.getAuthors);
+  const [authors, setAuthors] = useState<AuthorRecord[]>([]);
   const [open, setOpen] = useState(false);
   const [inputVal, setInputVal] = useState(value);
 
-  useEffect(() => { if (!open) setInputVal(value); }, [value, open]);
+  useEffect(() => {
+    let active = true;
+    const loadAuthors = async () => {
+      try {
+        const response = await apiFetch<any>("/authors");
+        const data = Array.isArray(response) ? response : response?.data ?? [];
+        if (!active) return;
+        setAuthors(data.map(normalizeAuthor).filter((author: AuthorRecord) => author.name));
+      } catch (error) {
+        console.warn("Authors API unavailable", error);
+        if (active) setAuthors([]);
+      }
+    };
 
-  const filtered = (authors ?? []).filter(
+    void loadAuthors();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) setInputVal(value);
+  }, [value, open]);
+
+  const filtered = authors.filter(
     (u) => u.name && u.name.toLowerCase().includes(inputVal.toLowerCase()) && inputVal.length > 0
   );
 
@@ -39,7 +74,7 @@ export default function AuthorAutocomplete({ value, onChange, placeholder }: { v
             className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-xl shadow-xl overflow-hidden"
           >
             {filtered.slice(0, 6).map((u) => (
-              <button key={u._id} type="button" onMouseDown={() => handleSelect(u.name!)}
+              <button key={u.id} type="button" onMouseDown={() => handleSelect(u.name)}
                 className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
               >
                 {u.image ? (

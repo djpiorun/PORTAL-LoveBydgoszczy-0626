@@ -13,17 +13,18 @@ import PartnerLogosStrip from "@/components/ads/PartnerLogosStrip";
 import ReelsStrip from "@/components/landing/ReelsStrip";
 import SEO from "@/components/SEO";
 import { Building2, Music, Palette, Briefcase, UtensilsCrossed, Users, Zap, MapPin, ChevronRight, ChevronLeft, Trophy, HardHat, Scale, Newspaper } from "lucide-react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Link, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ReactNode } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MobileLanding from "@/components/mobile/MobileLanding";
 import MobileBottomNav from "@/components/MobileBottomNav";
-import { useState, useRef, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getArticleHref } from "@/lib/articleRouting";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles, type Article } from "@/lib/articles-api";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { toast } from "sonner";
 
 const categorySections = [
   {
@@ -82,8 +83,43 @@ const categorySections = [
   },
 ];
 
+type UpdateItem = {
+  _id?: string;
+  title: string;
+  publishedAt: number;
+  category?: string | null;
+  location?: string | null;
+};
+
 function HomepageUpdatesStrip() {
-  const updates = useQuery(api.updates.list, { limit: 5 });
+  const [updates, setUpdates] = useState<UpdateItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUpdates = async () => {
+      setIsLoading(true);
+      try {
+        const payload = await apiFetch<any>("/updates?limit=5");
+        if (!isMounted) return;
+        const data = payload?.data ?? payload?.updates ?? payload ?? [];
+        setUpdates(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (!isMounted) return;
+        setUpdates([]);
+        toast.warning("Aktualizacje są chwilowo niedostępne.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadUpdates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
@@ -118,7 +154,7 @@ function HomepageUpdatesStrip() {
     nasze_dzialania: "Nasze Działania",
   };
 
-  const latest = updates?.slice(0, 5) ?? [];
+  const latest = updates.slice(0, 5);
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
@@ -148,7 +184,7 @@ function HomepageUpdatesStrip() {
           </Link>
         </div>
 
-        {!updates ? (
+        {isLoading ? (
           <div className="flex gap-3 overflow-hidden">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="h-20 w-48 shrink-0 animate-pulse rounded-[1.25rem] bg-gradient-to-br from-amber-100/60 to-amber-50/40 shadow-sm border border-amber-100/40 dark:from-amber-500/16 dark:to-amber-500/10 dark:border-amber-500/20" />
@@ -160,7 +196,7 @@ function HomepageUpdatesStrip() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {latest.map((upd, i) => (
               <motion.div
-                key={upd._id}
+                key={upd._id ?? `${upd.title}-${i}`}
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
@@ -208,10 +244,36 @@ function HomepageFeedBand({
 
 // ─── Polecane Nasze Publikacje — one article per category rotating ────────────
 function PolecanePubSection() {
-  const allArticles = useQuery(api.articles.list, { limit: 20 });
+  const [allArticles, setAllArticles] = useState<Article[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const resolved = useResolvedArticles(allArticles);
   const [active, setActive] = useState(0);
   const nav = useNavigate();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadArticles = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchArticles({ limit: 20 });
+        if (!isMounted) return;
+        setAllArticles(data);
+      } catch (error) {
+        if (!isMounted) return;
+        setAllArticles([]);
+        toast.error("Nie udało się pobrać publikacji.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadArticles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Build a list: one article per category, rotating through categories
   const CATEGORY_ORDER = ["miasto", "rozrywka", "kultura", "biznes", "gastronomia", "bydgoszczanie", "sport", "polityka", "inwestycje", "medyczna"];
@@ -237,7 +299,7 @@ function PolecanePubSection() {
     return result.slice(0, 12);
   }, [resolved]);
 
-  const loading = resolved === undefined;
+  const loading = isLoading || resolved === undefined;
   const canPrev = active > 0;
   const canNext = active + 1 < items.length;
 
@@ -540,10 +602,36 @@ function ThemeArticleCard({ article, hovered, onHoverStart, onHoverEnd, onClick,
 
 // ─── Polityka Section — 3 articles horizontal ────────────────────────────────
 function PolitykaSectionHorizontal() {
-  const articles = useQuery(api.articles.list, { category: "polityka" as any, limit: 10 });
+  const [articles, setArticles] = useState<Article[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const resolved = useResolvedArticles(articles);
   const nav = useNavigate();
   const [hovered, setHovered] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadArticles = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchArticles({ category: "polityka", limit: 10 });
+        if (!isMounted) return;
+        setArticles(data);
+      } catch (error) {
+        if (!isMounted) return;
+        setArticles([]);
+        toast.error("Nie udało się pobrać publikacji politycznych.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadArticles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const items = resolved?.slice(0, 3) ?? [];
 
@@ -588,7 +676,7 @@ function PolitykaSectionHorizontal() {
           </Link>
         </motion.div>
 
-        {!resolved ? (
+        {isLoading || !resolved ? (
           <div className="grid grid-cols-3 gap-5">
             {[...Array(3)].map((_, i) => <div key={i} className="h-80 rounded-2xl bg-white/5 animate-pulse" />)}
           </div>
@@ -620,10 +708,36 @@ function PolitykaSectionHorizontal() {
 
 // ─── Inwestycje Section — 3 articles horizontal ──────────────────────────────
 function InwestycjeSectionHorizontal() {
-  const articles = useQuery(api.articles.list, { category: "inwestycje" as any, limit: 10 });
+  const [articles, setArticles] = useState<Article[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const resolved = useResolvedArticles(articles);
   const nav = useNavigate();
   const [hovered, setHovered] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadArticles = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchArticles({ category: "inwestycje", limit: 10 });
+        if (!isMounted) return;
+        setArticles(data);
+      } catch (error) {
+        if (!isMounted) return;
+        setArticles([]);
+        toast.error("Nie udało się pobrać publikacji inwestycyjnych.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadArticles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const items = resolved?.slice(0, 3) ?? [];
 
@@ -668,7 +782,7 @@ function InwestycjeSectionHorizontal() {
           </Link>
         </motion.div>
 
-        {!resolved ? (
+        {isLoading || !resolved ? (
           <div className="grid grid-cols-3 gap-5">
             {[...Array(3)].map((_, i) => <div key={i} className="h-80 rounded-2xl bg-muted/50 animate-pulse" />)}
           </div>
@@ -700,10 +814,36 @@ function InwestycjeSectionHorizontal() {
 
 // ─── Sport Section — 3 articles horizontal ───────────────────────────────────
 function SportSectionHorizontal() {
-  const articles = useQuery(api.articles.list, { category: "sport" as any, limit: 10 });
+  const [articles, setArticles] = useState<Article[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const resolved = useResolvedArticles(articles);
   const nav = useNavigate();
   const [hovered, setHovered] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadArticles = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchArticles({ category: "sport", limit: 10 });
+        if (!isMounted) return;
+        setArticles(data);
+      } catch (error) {
+        if (!isMounted) return;
+        setArticles([]);
+        toast.error("Nie udało się pobrać publikacji sportowych.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadArticles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const items = resolved?.slice(0, 3) ?? [];
 
@@ -750,7 +890,7 @@ function SportSectionHorizontal() {
           </Link>
         </motion.div>
 
-        {!resolved ? (
+        {isLoading || !resolved ? (
           <div className="grid grid-cols-3 gap-5">
             {[...Array(3)].map((_, i) => <div key={i} className="h-80 rounded-2xl bg-muted/50 animate-pulse" />)}
           </div>

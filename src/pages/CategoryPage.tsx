@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, Navigate } from "react-router";
 import NotFound from "@/pages/NotFound";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ArticleCard from "@/components/ArticleCard";
@@ -20,6 +18,7 @@ import {
 import { useNavigate } from "react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getArticleHref } from "@/lib/articleRouting";
+import { useArticles } from "@/hooks/use-articles-api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CategoryTheme {
@@ -862,9 +861,9 @@ function MobileCategoryPage({ slug, config }: { slug: string; config: CategoryCo
   const [sortBy, setSortBy] = useState<"newest" | "popular" | "recommended">("newest");
   const [visibleCount, setVisibleCount] = useState(5);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const articles = useQuery(api.articles.list, { category: slug as any, limit: 60 });
+  const { articles } = useArticles({ category: slug, limit: 60 });
 
-  let sorted = [...(articles || [])];
+  let sorted = [...articles];
   if (sortBy === "newest") sorted.sort((a, b) => b.publishedAt - a.publishedAt);
   else if (sortBy === "popular") sorted.sort((a, b) => (b.title.length + b.publishedAt / 1e10) - (a.title.length + a.publishedAt / 1e10));
   else sorted.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0) || b.publishedAt - a.publishedAt);
@@ -936,7 +935,7 @@ function MobileCategoryPage({ slug, config }: { slug: string; config: CategoryCo
               headerFrom={config.headerFrom}
               headerTo={config.headerTo}
               Icon={Icon}
-              coverImg={heroArticles[0]?.imageUrl}
+              coverImg={heroArticles[0]?.imageUrl ?? undefined}
             />
           </div>
 
@@ -1459,13 +1458,13 @@ export default function CategoryPage() {
   const config = categoryConfig[slug as keyof typeof categoryConfig];
   const Icon = config.icon;
 
-  const articles = useQuery(api.articles.list, { category: slug as any, limit: 100 });
+  const { articles, isLoading } = useArticles({ category: slug, limit: 100 });
 
   if (isMobile) {
     return <MobileCategoryPage slug={slug} config={config} />;
   }
 
-  let sortedArticles = [...(articles || [])];
+  let sortedArticles = [...articles];
   if (sortBy === "newest") sortedArticles.sort((a, b) => b.publishedAt - a.publishedAt);
   else if (sortBy === "popular") sortedArticles.sort((a, b) => (b.title.length * b.publishedAt) - (a.title.length * a.publishedAt));
   else if (sortBy === "recommended") sortedArticles.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
@@ -1503,7 +1502,7 @@ export default function CategoryPage() {
                 </h2>
               </div>
 
-              {!articles ? (
+              {isLoading ? (
                 <div className="flex flex-col gap-8">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-[240px] rounded-3xl bg-white/60 animate-pulse border border-slate-100" />
@@ -1519,7 +1518,7 @@ export default function CategoryPage() {
                 <>
                   <div className="flex flex-col gap-6 mb-10">
                     {topArticles.map((article, i) => (
-                      <motion.div key={article._id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.1 }}>
+                      <motion.div key={article.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.1 }}>
                         <ArticleCard article={article} index={i} list />
                       </motion.div>
                     ))}
@@ -1528,7 +1527,7 @@ export default function CategoryPage() {
                   {gridArticles.length > 0 && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
                       {gridArticles.map((article, i) => (
-                        <motion.div key={article._id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.1 }} className="h-full">
+                        <motion.div key={article.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.1 }} className="h-full">
                           <ArticleCard article={article} index={i + 7} />
                         </motion.div>
                       ))}

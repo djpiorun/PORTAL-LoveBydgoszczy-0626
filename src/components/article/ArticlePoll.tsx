@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BadgeCheck, BarChart3, CheckCircle2, Loader2 } from "lucide-react";
+
+import { fetchArticlePollResults, submitArticlePollVote, type ArticlePollResults, type SubmitPollVoteResponse } from "@/lib/articles-api";
+import { useAuth } from "@/hooks/use-auth";
 
 type PollOption = {
   id: string;
@@ -58,13 +58,6 @@ type ArticlePollConfig = {
   showBelowArticleWhenNoShortcode: boolean;
 };
 
-type SubmitPollVoteResult = {
-  ok: boolean;
-  code: string;
-  message?: string;
-  voteId?: string;
-};
-
 function getClientVoteKey(pollId: string) {
   return `article-poll:${pollId}`;
 }
@@ -73,18 +66,26 @@ export default function ArticlePoll({
   articleId,
   poll,
 }: {
-  articleId: Id<"articles">;
+  articleId: string;
   poll: ArticlePollConfig;
 }) {
-  const results = useQuery(api.articles.getPollResults, { articleId });
-  const submitVote = useMutation(api.articles.submitPollVote);
-  const currentUser = useQuery(api.users.currentUser);
+  const { user } = useAuth();
+  const [results, setResults] = useState<ArticlePollResults | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [rating, setRating] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [localVoted, setLocalVoted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const loadResults = useCallback(async () => {
+    try {
+      const data = await fetchArticlePollResults(articleId);
+      setResults(data);
+    } catch {
+      setResults(null);
+    }
+  }, [articleId]);
 
   const voteStorageKey = useMemo(() => getClientVoteKey(poll.pollId), [poll.pollId]);
 
@@ -105,6 +106,10 @@ export default function ArticlePoll({
       window.localStorage.removeItem(voteStorageKey);
     }
   }, [voteStorageKey, poll.voteLimitMode, poll.revoteAfterHours]);
+
+  useEffect(() => {
+    void loadResults();
+  }, [loadResults]);
 
   const canVote = poll.status === "active" && !submitting;
   const maxSelections = poll.maxSelections ?? 2;
@@ -165,17 +170,17 @@ export default function ArticlePoll({
     setError(null);
     setNotice(null);
     try {
-      const response = await submitVote({
-        articleId,
-        voterKey: currentUser?._id ?? voteStorageKey,
+      const response = await submitArticlePollVote(articleId, {
+        voterKey: user?.id ?? voteStorageKey,
         selections: poll.type === "scale" ? undefined : selected,
         rating: poll.type === "scale" ? rating ?? undefined : undefined,
-      }) as SubmitPollVoteResult;
+      }) as SubmitPollVoteResponse;
 
       if (response.ok) {
         window.localStorage.setItem(voteStorageKey, JSON.stringify({ votedAt: Date.now() }));
         setLocalVoted(true);
         setNotice(poll.afterVoteLabel || "Dziękujemy za oddanie głosu.");
+        await loadResults();
         return;
       }
 
@@ -186,6 +191,7 @@ export default function ArticlePoll({
 
       if (response.code === "already_voted") {
         setNotice(response.message ? `${response.message} Pokazujemy aktualne wyniki ankiety.` : "Twój głos został już zapisany. Poniżej są aktualne wyniki ankiety.");
+        await loadResults();
         return;
       }
 

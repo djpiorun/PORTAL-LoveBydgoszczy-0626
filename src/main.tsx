@@ -1,8 +1,7 @@
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
-import { useEffect, Suspense } from "react";
+import { Suspense, useEffect } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -75,7 +74,9 @@ function RouteLoading() {
   );
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+function AppProviders({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
 
 function RouteSyncer() {
   const location = useLocation();
@@ -264,7 +265,7 @@ function AnimatedRoutes() {
 createRoot(document.getElementById("root")!).render(
   <>
     <InstrumentationProvider>
-      <ConvexAuthProvider client={convex}>
+      <AppProviders>
         <BrowserRouter>
           <ConditionalVlyToolbar />
           <RouteSyncer />
@@ -277,7 +278,7 @@ createRoot(document.getElementById("root")!).render(
           <MobileGlobalTopBar />
           <MobileBottomNav />
         </BrowserRouter>
-      </ConvexAuthProvider>
+      </AppProviders>
     </InstrumentationProvider>
   </>,
 );

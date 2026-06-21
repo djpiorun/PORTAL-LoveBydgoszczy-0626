@@ -1,13 +1,13 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { motion } from "framer-motion";
 import { ArrowLeft, Calendar, Eye, FileText, ShieldAlert, ChevronRight, Home } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SEO from "@/components/SEO";
 import { sanitizePageHtml } from "@/lib/page-content";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const PAGE_TYPE_LABELS: Record<string, string> = {
   standard: "Strona",
@@ -22,12 +22,95 @@ export default function StaticPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isAdminPreview = searchParams.get("preview") === "admin";
+  const [publicPage, setPublicPage] = useState<any | null | undefined>(undefined);
+  const [previewPage, setPreviewPage] = useState<any | null | undefined>(undefined);
 
-  const publicPage = useQuery(api.pages.getBySlug, { slug: slug ?? "" });
-  const previewPage = useQuery(
-    api.pages.getAdminPreviewBySlug,
-    isAdminPreview && slug ? { slug } : "skip",
-  );
+  useEffect(() => {
+    if (!slug) {
+      setPublicPage(null);
+      return;
+    }
+    let active = true;
+    setPublicPage(undefined);
+    apiFetch<any>(`/pages/slug/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.page ?? payload;
+        if (!data) {
+          setPublicPage(null);
+          return;
+        }
+        setPublicPage({
+          ...data,
+          _id: String(data?.id ?? data?._id ?? ""),
+          content: data?.content ?? "",
+          pageType: data?.pageType ?? data?.page_type ?? "standard",
+          heroImage: data?.heroImage ?? data?.hero_image ?? null,
+          excerpt: data?.excerpt ?? null,
+          seoTitle: data?.seoTitle ?? data?.seo_title ?? null,
+          seoDescription: data?.seoDescription ?? data?.seo_description ?? null,
+          canonicalUrl: data?.canonicalUrl ?? data?.canonical_url ?? null,
+          robots: data?.robots ?? null,
+          ogTitle: data?.ogTitle ?? data?.og_title ?? null,
+          ogDescription: data?.ogDescription ?? data?.og_description ?? null,
+          ogImage: data?.ogImage ?? data?.og_image ?? null,
+          updatedAt: data?.updatedAt ?? data?.updated_at ?? null,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setPublicPage(null);
+        toast.warning("Nie udało się pobrać strony.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!isAdminPreview || !slug) {
+      setPreviewPage(undefined);
+      return;
+    }
+    let active = true;
+    setPreviewPage(undefined);
+    apiFetch<any>(`/admin/pages/slug/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const data = payload?.data ?? payload?.page ?? payload;
+        if (!data) {
+          setPreviewPage(null);
+          return;
+        }
+        setPreviewPage({
+          ...data,
+          _id: String(data?.id ?? data?._id ?? ""),
+          content: data?.content ?? "",
+          pageType: data?.pageType ?? data?.page_type ?? "standard",
+          heroImage: data?.heroImage ?? data?.hero_image ?? null,
+          excerpt: data?.excerpt ?? null,
+          seoTitle: data?.seoTitle ?? data?.seo_title ?? null,
+          seoDescription: data?.seoDescription ?? data?.seo_description ?? null,
+          canonicalUrl: data?.canonicalUrl ?? data?.canonical_url ?? null,
+          robots: data?.robots ?? null,
+          ogTitle: data?.ogTitle ?? data?.og_title ?? null,
+          ogDescription: data?.ogDescription ?? data?.og_description ?? null,
+          ogImage: data?.ogImage ?? data?.og_image ?? null,
+          updatedAt: data?.updatedAt ?? data?.updated_at ?? null,
+          status: data?.status ?? null,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setPreviewPage(null);
+        toast.warning("Podgląd strony jest niedostępny.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdminPreview, slug]);
 
   const page = isAdminPreview ? previewPage : publicPage;
   const sanitizedContent = useMemo(() => sanitizePageHtml(page?.content), [page?.content]);

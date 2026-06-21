@@ -1,16 +1,53 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { User, Search, Building2, Mail, Globe, Facebook, Twitter } from "lucide-react";
 import { motion } from "framer-motion";
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
+
+const normalizePolitician = (politician: any) => ({
+  _id: String(politician?.id ?? politician?._id ?? ""),
+  slug: politician?.slug ?? "",
+  fullName: politician?.fullName ?? politician?.full_name ?? "",
+  photo: politician?.photo ?? politician?.photo_url ?? null,
+  party: politician?.party ?? null,
+  position: politician?.position ?? null,
+  facebookUrl: politician?.facebookUrl ?? politician?.facebook_url ?? null,
+  twitterUrl: politician?.twitterUrl ?? politician?.twitter_url ?? null,
+  websiteUrl: politician?.websiteUrl ?? politician?.website_url ?? null,
+  bio: politician?.bio ?? null,
+  email: politician?.email ?? null,
+});
+
+const normalizePoliticiansPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.politicians ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizePolitician) : [];
+};
 
 export default function PoliticiansDatabase() {
-  const politicians = useQuery(api.politicians.list, {});
+  const [politicians, setPoliticians] = useState<any[] | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const [partyFilter, setPartyFilter] = useState<string>("all");
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/politicians")
+      .then((payload) => {
+        if (!active) return;
+        setPoliticians(normalizePoliticiansPayload(payload));
+      })
+      .catch(() => {
+        if (!active) return;
+        setPoliticians([]);
+        toast.warning("Nie udało się pobrać bazy polityków.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Get unique parties
   const parties = Array.from(

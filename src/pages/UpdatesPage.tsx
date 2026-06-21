@@ -1,5 +1,5 @@
-import { usePaginatedQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 import { Zap, MapPin, Link2, ArrowLeft, Filter, ChevronDown } from "lucide-react";
 import { Link } from "react-router";
 import Navbar from "@/components/Navbar";
@@ -42,8 +42,23 @@ function formatTime(ts: number) {
   };
 }
 
-function groupByDate(updates: any[], weekday = false) {
-  const grouped: Record<string, any[]> = {};
+type UpdateItem = {
+  _id?: string;
+  title: string;
+  publishedAt: number;
+  category?: string | null;
+  description?: string | null;
+  location?: string | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  linkUrl?: string | null;
+  linkLabel?: string | null;
+};
+
+type UpdatesStatus = "Loading" | "CanLoadMore" | "LoadingMore" | "Done";
+
+function groupByDate(updates: UpdateItem[], weekday = false) {
+  const grouped: Record<string, UpdateItem[]> = {};
   for (const upd of updates ?? []) {
     const key = new Date(upd.publishedAt).toLocaleDateString("pl-PL", {
       ...(weekday ? { weekday: "long" } : {}),
@@ -55,6 +70,62 @@ function groupByDate(updates: any[], weekday = false) {
     grouped[key]!.push(upd);
   }
   return grouped;
+}
+
+function useUpdatesFeed(activeCategory: string | null, pageSize: number) {
+  const [updates, setUpdates] = useState<UpdateItem[] | null>(null);
+  const [status, setStatus] = useState<UpdatesStatus>("Loading");
+  const [page, setPage] = useState(1);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const loadPage = async (pageToLoad: number, replace: boolean) => {
+    try {
+      const params = new URLSearchParams({
+        page: String(pageToLoad),
+        per_page: String(pageSize),
+      });
+      if (activeCategory) params.set("category", activeCategory);
+      const payload = await apiFetch<any>(`/updates?${params.toString()}`);
+      if (!isMountedRef.current) return;
+      const data = payload?.data ?? payload?.updates ?? payload ?? [];
+      const nextUpdates = Array.isArray(data) ? data : [];
+      const hasMore = payload?.meta?.current_page && payload?.meta?.last_page
+        ? payload.meta.current_page < payload.meta.last_page
+        : nextUpdates.length === pageSize;
+
+      setUpdates((prev) => (replace ? nextUpdates : [...(prev ?? []), ...nextUpdates]));
+      setStatus(hasMore ? "CanLoadMore" : "Done");
+      setPage(pageToLoad);
+    } catch (error) {
+      if (!isMountedRef.current) return;
+      setUpdates((prev) => (replace ? [] : prev ?? []));
+      setStatus("Done");
+      toast.warning("Aktualizacje są chwilowo niedostępne.");
+    }
+  };
+
+  useEffect(() => {
+    setUpdates(null);
+    setStatus("Loading");
+    setPage(1);
+    loadPage(1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategory, pageSize]);
+
+  const loadMore = () => {
+    if (status !== "CanLoadMore") return;
+    setStatus("LoadingMore");
+    loadPage(page + 1, false);
+  };
+
+  return { updates, status, loadMore };
 }
 
 // ─── Shared Update Card ───────────────────────────────────────────────────────
@@ -190,11 +261,7 @@ function UpdateCard({ upd, index, isLast, mobile }: { upd: any; index: number; i
 function MobileUpdatesPage() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const { results: updates, status, loadMore } = usePaginatedQuery(
-    api.updates.listPaginated,
-    activeCategory ? { category: activeCategory as any } : {},
-    { initialNumItems: 30 }
-  );
+  const { updates, status, loadMore } = useUpdatesFeed(activeCategory, 30);
 
   const grouped = groupByDate(updates ?? [], true);
 
@@ -293,7 +360,7 @@ function MobileUpdatesPage() {
           </section>
 
           {/* Content */}
-          {!updates ? (
+          {updates === null ? (
             <div className="space-y-3">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="h-28 rounded-[1.7rem] bg-muted/50 animate-pulse" />
@@ -334,7 +401,7 @@ function MobileUpdatesPage() {
 
           {status === "CanLoadMore" && (
             <div className="flex justify-center pt-1">
-              <button type="button" onClick={() => loadMore(20)}
+              <button type="button" onClick={() => loadMore()}
                 className="rounded-full border border-border/50 bg-card px-5 py-3 text-[12px] font-black text-foreground transition active:scale-95 shadow-sm">
                 Wczytaj więcej
               </button>
@@ -357,11 +424,7 @@ function DesktopUpdatesPage() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { results: updates, status, loadMore } = usePaginatedQuery(
-    api.updates.listPaginated,
-    activeCategory ? { category: activeCategory as any } : {},
-    { initialNumItems: 20 }
-  );
+  const { updates, status, loadMore } = useUpdatesFeed(activeCategory, 20);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -457,7 +520,7 @@ function DesktopUpdatesPage() {
         </motion.div>
 
         {/* Content */}
-        {!updates ? (
+        {updates === null ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="h-28 rounded-[1.5rem] bg-muted/50 animate-pulse" />
@@ -492,7 +555,7 @@ function DesktopUpdatesPage() {
 
         {status === "CanLoadMore" && (
           <div className="flex justify-center pt-6">
-            <button onClick={() => loadMore(20)}
+            <button onClick={() => loadMore()}
               className="px-6 py-2.5 rounded-xl text-sm font-bold border border-border/50 bg-card text-foreground hover:bg-muted transition-colors shadow-sm">
               Wczytaj więcej
             </button>

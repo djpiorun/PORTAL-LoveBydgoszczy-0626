@@ -1,5 +1,4 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useParams, Link, useNavigate } from "react-router";
@@ -7,6 +6,9 @@ import { motion } from "framer-motion";
 import { Trophy, Globe, ChevronLeft, FileText, MapPin, Zap, Calendar, Users, ArrowRight } from "lucide-react";
 import { getArticleHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
 
 const SPORT_TYPE_LABELS: Record<string, string> = {
   pilka_nozna: "Piłka nożna",
@@ -29,12 +31,74 @@ const SPORT_TYPE_COLORS: Record<string, { from: string; via: string; to: string;
   inne: { from: "from-blue-700", via: "via-indigo-800", to: "to-blue-900", glow: "bg-blue-500/20" },
 };
 
+const normalizeTeam = (team: any) => ({
+  _id: String(team?.id ?? team?._id ?? ""),
+  slug: team?.slug ?? "",
+  name: team?.name ?? "",
+  shortName: team?.shortName ?? team?.short_name ?? "",
+  sportType: team?.sportType ?? team?.sport_type ?? "inne",
+  logo: team?.logo ?? team?.logo_url ?? null,
+  league: team?.league ?? null,
+  city: team?.city ?? null,
+  stadium: team?.stadium ?? null,
+  founded: team?.founded ?? null,
+  primaryColor: team?.primaryColor ?? team?.primary_color ?? null,
+  website: team?.website ?? team?.website_url ?? null,
+});
+
+const normalizeTeamPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.team ?? payload;
+  return data ? normalizeTeam(data) : null;
+};
+
 export default function SportTeamProfilePage() {
   const { slug } = useParams<{ slug: string }>();
   const nav = useNavigate();
-  const team = useQuery(api.sportTeams.get, slug ? { slug } : "skip");
-  const allArticles = useQuery(api.articles.list, { category: "sport", limit: 100 });
+  const [team, setTeam] = useState<any | null | undefined>(undefined);
+  const [allArticles, setAllArticles] = useState<any[] | undefined>(undefined);
   const resolvedArticles = useResolvedArticles(allArticles);
+
+  useEffect(() => {
+    if (!slug) {
+      setTeam(null);
+      return;
+    }
+    let active = true;
+    setTeam(undefined);
+    apiFetch(`/sport-teams/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const normalized = normalizeTeamPayload(payload);
+        setTeam(normalized && normalized._id ? normalized : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTeam(null);
+        toast.warning("Nie udało się pobrać profilu drużyny.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    let active = true;
+    fetchArticles({ category: "sport", limit: 100 })
+      .then((items) => {
+        if (!active) return;
+        setAllArticles(items);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllArticles([]);
+        toast.warning("Nie udało się pobrać artykułów sportowych.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const safeArticles = resolvedArticles ?? [];
 

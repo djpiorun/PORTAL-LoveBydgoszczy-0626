@@ -1,6 +1,4 @@
 import { motion } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { User, ArrowRight, Clock, Star, AlertCircle, AlertTriangle, Newspaper, Info, PenLine, BookOpen, Mic, BarChart2, FileText, Lightbulb, Users, Send, DollarSign } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -92,24 +90,27 @@ const categoryBorderColors: Record<string, string> = {
 
 interface ArticleCardProps {
   article: {
-    _id: string;
+    id?: string;
+    _id?: string;
     title: string;
     excerpt: string;
     category: string;
-    imageUrl?: string;
+    imageUrl?: string | null;
     author: string;
     publishedAt: number;
-    tags?: string[];
-    isPatronage?: boolean;
-    slug?: string;
-    personName?: string;
-    labelUrgent?: boolean;
-    labelImportant?: boolean;
-    labelOurNews?: boolean;
-    labelMustKnow?: boolean;
-    labelAuthorArticle?: boolean;
-    label18Plus?: boolean;
-    articleType?: string;
+    tags?: string[] | null;
+    isPatronage?: boolean | null;
+    slug?: string | null;
+    personName?: string | null;
+    labelUrgent?: boolean | null;
+    labelImportant?: boolean | null;
+    labelOurNews?: boolean | null;
+    labelMustKnow?: boolean | null;
+    labelAuthorArticle?: boolean | null;
+    label18Plus?: boolean | null;
+    articleType?: string | null;
+    authorImage?: string | null;
+    authorSlug?: string | null;
   };
   featured?: boolean;
   index?: number;
@@ -230,11 +231,20 @@ function buildAuthorHref(authorName: string, authorSlug?: string) {
   return `/autor/${authorSlug || authorName.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
-function ArticleAuthorMeta({ authorName, publishedAt }: { authorName: string; publishedAt: number }) {
-  const author = useQuery(api.users.getBySlugOrName, { identifier: authorName });
+function ArticleAuthorMeta({
+  authorName,
+  publishedAt,
+  authorImage,
+  authorSlug,
+}: {
+  authorName: string;
+  publishedAt: number;
+  authorImage?: string | null;
+  authorSlug?: string | null;
+}) {
   const navigate = useNavigate();
-  const displayName = author?.name || authorName;
-  const authorHref = buildAuthorHref(authorName, author?.slug);
+  const displayName = authorName;
+  const authorHref = buildAuthorHref(authorName, authorSlug ?? undefined);
   const initials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -253,8 +263,8 @@ function ArticleAuthorMeta({ authorName, publishedAt }: { authorName: string; pu
         className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 shadow-sm"
         aria-label={`Przejdz do autora ${displayName}`}
       >
-        {author?.image ? (
-          <img src={author.image} alt={displayName} className="w-full h-full object-cover" />
+        {authorImage ? (
+          <img src={authorImage} alt={displayName} className="w-full h-full object-cover" />
         ) : initials ? (
           <span className="text-xs font-black text-slate-700">{initials}</span>
         ) : (
@@ -420,7 +430,12 @@ export default function ArticleCard({
           <div className="absolute bottom-0 right-0 w-32 h-32 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
           
           <div className="pt-2.5 border-t border-slate-200 dark:border-border/60 flex flex-row items-end justify-between gap-3 mt-auto relative z-10">
-            <ArticleAuthorMeta authorName={article.author} publishedAt={article.publishedAt} />
+            <ArticleAuthorMeta
+              authorName={article.author}
+              publishedAt={article.publishedAt}
+              authorImage={article.authorImage}
+              authorSlug={article.authorSlug}
+            />
 
             <div className={`mb-0.5 flex items-center gap-1.5 text-slate-600 dark:text-muted-foreground transition-all duration-300 bg-white dark:bg-muted/40 px-4 py-2 rounded-full border border-slate-200 dark:border-border/60 shadow-sm ${categoryHoverBg[article.category] || "group-hover:border-primary group-hover:text-primary dark:group-hover:text-primary group-hover:shadow-md"}`}>
               <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] transition-colors">

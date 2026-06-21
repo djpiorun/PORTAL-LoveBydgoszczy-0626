@@ -1,12 +1,11 @@
 import { motion } from "framer-motion";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import ArticleCard from "./ArticleCard";
 import { ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getCategoryHref } from "@/lib/articleRouting";
 import { useResolvedArticles } from "@/hooks/use-resolved-articles";
+import { useArticles } from "@/hooks/use-articles-api";
 
 interface CategorySectionProps {
   id: string;
@@ -106,11 +105,11 @@ const categoryButtonColors: Record<CategorySectionProps["category"], string> = {
 };
 
 export default function CategorySection({ id, title, category, description, icon, accentColor, className = "", prefetchedArticles }: CategorySectionProps & { prefetchedArticles?: any[] }) {
-  // Only fetch from DB if no prefetched articles provided
-  const fetchedArticles = useQuery(
-    api.articles.list,
-    prefetchedArticles !== undefined ? "skip" : { category, limit: 7 }
-  );
+  const shouldFetch = prefetchedArticles === undefined;
+  const { articles: fetchedArticles, isLoading } = useArticles({
+    category,
+    limit: shouldFetch ? 7 : 0,
+  });
   const articlesToUse = prefetchedArticles !== undefined ? prefetchedArticles.slice(0, 7) : fetchedArticles;
   const resolvedArticles = useResolvedArticles(articlesToUse as any);
   const navigate = useNavigate();
@@ -170,7 +169,7 @@ export default function CategorySection({ id, title, category, description, icon
               </div>
             </motion.div>
 
-            {!resolvedArticles ? (
+            {shouldFetch && isLoading ? (
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.05fr_0.95fr] xl:grid-cols-[1fr_1fr]">
                 <div className="h-[28rem] rounded-[2rem] bg-white/65 animate-pulse shadow-sm" />
                 <div className="grid content-start grid-cols-1 gap-6 sm:grid-cols-2">
@@ -187,7 +186,7 @@ export default function CategorySection({ id, title, category, description, icon
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.05fr_0.95fr] xl:grid-cols-[1fr_1fr]">
                 <div className="grid content-start gap-6">
                   <motion.div
-                    key={resolvedArticles[0]?._id}
+                    key={resolvedArticles[0]?.id}
                     initial={{ opacity: 0, y: 24 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}

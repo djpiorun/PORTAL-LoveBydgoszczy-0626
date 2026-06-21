@@ -1,16 +1,78 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useParams, Link } from "react-router";
 import { motion } from "framer-motion";
 import { Building2, Globe, Facebook, Twitter, ChevronLeft, FileText, Scale, ArrowRight, Quote } from "lucide-react";
 import { getArticleHref } from "@/lib/articleRouting";
+import { apiFetch } from "@/lib/api-client";
+import { fetchArticles } from "@/lib/articles-api";
+import { toast } from "sonner";
+
+const normalizePolitician = (politician: any) => ({
+  _id: String(politician?.id ?? politician?._id ?? ""),
+  slug: politician?.slug ?? "",
+  fullName: politician?.fullName ?? politician?.full_name ?? "",
+  photo: politician?.photo ?? politician?.photo_url ?? null,
+  party: politician?.party ?? null,
+  position: politician?.position ?? null,
+  facebookUrl: politician?.facebookUrl ?? politician?.facebook_url ?? null,
+  twitterUrl: politician?.twitterUrl ?? politician?.twitter_url ?? null,
+  websiteUrl: politician?.websiteUrl ?? politician?.website_url ?? null,
+  bio: politician?.bio ?? null,
+});
+
+const normalizePoliticianPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.politician ?? payload;
+  return data ? normalizePolitician(data) : null;
+};
 
 export default function PoliticianProfilePage() {
   const { slug } = useParams<{ slug: string }>();
-  const politician = useQuery(api.politicians.get, slug ? { slug } : "skip");
-  const articles = useQuery(api.articles.list, { category: "polityka", limit: 50 });
+  const [politician, setPolitician] = useState<any | null | undefined>(undefined);
+  const [articles, setArticles] = useState<any[] | undefined>(undefined);
+
+  useEffect(() => {
+    if (!slug) {
+      setPolitician(null);
+      return;
+    }
+    let active = true;
+    setPolitician(undefined);
+    apiFetch(`/politicians/${slug}`)
+      .then((payload) => {
+        if (!active) return;
+        const normalized = normalizePoliticianPayload(payload);
+        setPolitician(normalized && normalized._id ? normalized : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPolitician(null);
+        toast.warning("Nie udało się pobrać profilu polityka.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    let active = true;
+    fetchArticles({ category: "polityka", limit: 50 })
+      .then((items) => {
+        if (!active) return;
+        setArticles(items);
+      })
+      .catch(() => {
+        if (!active) return;
+        setArticles([]);
+        toast.warning("Nie udało się pobrać artykułów politycznych.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const relatedArticles = articles?.filter(a => {
     const politics = (a as any).politics;

@@ -1,17 +1,57 @@
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { HardHat, Search, TrendingUp, Clock, CheckCircle2, Pause, Calendar } from "lucide-react";
 import { motion } from "framer-motion";
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
+
+const normalizeInvestment = (investment: any) => ({
+  _id: String(investment?.id ?? investment?._id ?? ""),
+  slug: investment?.slug ?? "",
+  projectName: investment?.projectName ?? investment?.project_name ?? "",
+  description: investment?.description ?? "",
+  projectStatus: investment?.projectStatus ?? investment?.project_status ?? "planowana",
+  mainImageUrl: investment?.mainImageUrl ?? investment?.main_image_url ?? null,
+  progressPercent: investment?.progressPercent ?? investment?.progress_percent ?? undefined,
+  investor: investment?.investor ?? null,
+  contractor: investment?.contractor ?? null,
+  budget: investment?.budget ?? null,
+  location: investment?.location ?? null,
+  startDate: investment?.startDate ?? investment?.start_date ?? null,
+  endDate: investment?.endDate ?? investment?.end_date ?? null,
+  isActive: investment?.isActive ?? investment?.is_active ?? true,
+});
+
+const normalizeInvestmentsPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.investments ?? payload ?? [];
+  return Array.isArray(data) ? data.map(normalizeInvestment) : [];
+};
 
 export default function InvestmentsTracking() {
-  const investments = useQuery(api.investments.list, {});
+  const [investments, setInvestments] = useState<any[] | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/investments")
+      .then((payload) => {
+        if (!active) return;
+        setInvestments(normalizeInvestmentsPayload(payload));
+      })
+      .catch(() => {
+        if (!active) return;
+        setInvestments([]);
+        toast.warning("Nie udało się pobrać listy inwestycji.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredInvestments = investments?.filter(investment => {
     const matchesSearch = !searchTerm ||

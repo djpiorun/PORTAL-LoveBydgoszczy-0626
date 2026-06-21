@@ -1,12 +1,12 @@
+import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SEO from "@/components/SEO";
 import { motion } from "framer-motion";
 import { Calendar, MapPin, Clock, User, ArrowLeft, Share2, Heart, Ticket, Info } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const categoryColors: Record<string, string> = {
   miasto: "bg-blue-500",
@@ -35,13 +35,58 @@ function formatEventDate(ts: number) {
   });
 }
 
+const normalizeEvent = (event: any) => ({
+  _id: String(event?.id ?? event?._id ?? ""),
+  title: event?.title ?? "",
+  description: event?.description ?? "",
+  category: event?.category ?? "miasto",
+  imageUrl: event?.imageUrl ?? event?.image_url ?? null,
+  location: event?.location ?? "",
+  startDate: event?.startDate ?? event?.start_date ?? Date.now(),
+  endDate: event?.endDate ?? event?.end_date ?? null,
+  price: event?.price ?? null,
+  organizer: event?.organizer ?? null,
+});
+
+const normalizeEventPayload = (payload: any) => {
+  const data = payload?.data ?? payload?.event ?? payload;
+  return data ? normalizeEvent(data) : null;
+};
+
 export default function EventPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [event, setEvent] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Guard against invalid IDs (e.g. literal ":id" from template URLs)
   const isValidId = id && id !== ":id" && !id.startsWith(":");
-  const event = useQuery(api.events.get, isValidId ? { id: id as Id<"events"> } : "skip");
+
+  useEffect(() => {
+    if (!isValidId) return;
+    let active = true;
+    setIsLoading(true);
+
+    apiFetch(`/events/${id}`)
+      .then((payload) => {
+        if (!active) return;
+        const normalized = normalizeEventPayload(payload);
+        setEvent(normalized && normalized._id ? normalized : null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEvent(null);
+        toast.error("Nie udało się pobrać wydarzenia.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, isValidId]);
 
   if (!isValidId) {
     return (
@@ -59,7 +104,7 @@ export default function EventPage() {
     );
   }
 
-  if (!event) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Navbar />
@@ -67,6 +112,22 @@ export default function EventPage() {
           <div className="animate-pulse flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             <p className="text-muted-foreground font-medium">Ładowanie wydarzenia...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!event) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-lg font-semibold text-foreground mb-2">Nie znaleziono wydarzenia</p>
+            <p className="text-muted-foreground mb-4">Wydarzenie jest niedostępne lub zostało usunięte.</p>
+            <button onClick={() => navigate("/")} className="text-primary font-semibold hover:underline">Wróć na stronę główną</button>
           </div>
         </div>
         <Footer />
