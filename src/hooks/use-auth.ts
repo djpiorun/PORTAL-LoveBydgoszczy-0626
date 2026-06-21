@@ -8,6 +8,17 @@ export type AuthUser = {
   email?: string | null;
   role?: string | null;
   image?: string | null;
+  username?: string | null;
+  subtitle?: string | null;
+  status?: string | null;
+  description?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  facebookUrl?: string | null;
+  instagramUrl?: string | null;
+  twitterUrl?: string | null;
+  websiteUrl?: string | null;
+  coverImage?: string | null;
 };
 
 type AuthResponse = {
